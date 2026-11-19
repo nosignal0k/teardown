@@ -130,14 +130,17 @@ test("inline style and script literals cannot point outside the topic", (t) => {
   }
 });
 
-test("published topic directory stays empty and extensions are documented once", () => {
+test("published topics match the catalog contract and extensions are documented once", () => {
   const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
   const agents = fs.readFileSync(path.join(repoRoot, "AGENTS.md"), "utf8");
   for (const extension of TOPIC_FILE_EXTENSIONS) assert.ok(readme.includes(extension), extension);
   assert.match(readme, /AGENTS\.md/);
   assert.match(agents, /README\.md/);
-  assert.match(agents, /190580154\+nosignal0k@users\.noreply\.github\.com/);
+  assert.match(agents, /不强制指定某个账号/);
+  assert.match(agents, /私人电话、私人邮箱/);
+  assert.doesNotMatch(agents, /190580154\+nosignal0k@users\.noreply\.github\.com/);
   assert.doesNotMatch(readme, /190580154\+nosignal0k@users\.noreply\.github\.com/);
+  assert.doesNotMatch(readme, /不强制指定某个账号/);
   assert.match(readme, /topic\.json/);
   assert.doesNotMatch(agents, /topic\.json/);
   assert.match(readme, /npm run build/);
@@ -151,8 +154,8 @@ test("published topic directory stays empty and extensions are documented once",
     sharedDir: path.join(repoRoot, "shared"),
   });
   assert.deepEqual(published.issues, []);
-  assert.equal(published.topics.length, 0);
-  assert.equal(fs.readdirSync(path.join(repoRoot, "topics")).some((name) => fs.statSync(path.join(repoRoot, "topics", name)).isDirectory()), false);
+  assert.deepEqual(published.topics.map((topic) => topic.slug), ["hermes-agent"]);
+  assert.equal(published.topics[0]?.title, "Hermes Agent");
 });
 
 function html(extra: string): string {

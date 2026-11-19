@@ -82,7 +82,9 @@ npm run build
 
 `dist/` 就是项目站点的站点根，其中包含 `.nojekyll`。页面里的资源使用 `/teardown/` 前缀。
 
-当前没有开启 GitHub Pages，本仓库也不包含会部署的工作流。要发布时再改仓库设置：Settings → Pages → Build and deployment → GitHub Actions，工作流只上传 `dist/`。站点地址将是 <https://nosignal0k.github.io/teardown/>。不要把输出目录改到别的基路径，除非同时改构建里的 `BASE_PATH`。
+`.github/workflows/pages.yml` 在 `main` 的推送和手动触发时构建，并把 `dist/` 上传为 Pages 制品再部署。拉取请求不会部署。已有的 `check.yml` 仍只做检查。
+
+仓库的 Pages 源仍要在设置里选 GitHub Actions：Settings → Pages → Build and deployment → Source → GitHub Actions。选好并完成一次 `main` 上的部署后，站点地址是 <https://nosignal0k.github.io/teardown/>，主题是 <https://nosignal0k.github.io/teardown/topics/<slug>/>。不要把输出目录改到别的基路径，除非同时改构建里的 `BASE_PATH`。
 
 ## 贡献
 

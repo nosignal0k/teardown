@@ -26,8 +26,12 @@ test("filtered cards are not visible in a browser", async (t) => {
     "--remote-debugging-port=0",
     `--user-data-dir=${chromeDir}`,
   ], { stdio: ["ignore", "ignore", "pipe"] });
-  t.after(() => {
-    chrome.kill();
+  t.after(async () => {
+    chrome.kill("SIGKILL");
+    await new Promise((resolve) => {
+      if (chrome.exitCode !== null || chrome.signalCode !== null) resolve(undefined);
+      else chrome.once("exit", () => resolve(undefined));
+    });
   });
   const socket = new WebSocket(await browserSocket(chrome));
   t.after(() => {
