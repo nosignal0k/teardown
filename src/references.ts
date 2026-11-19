@@ -115,6 +115,17 @@ function extractMarkup(text: string): { url: string; kind: RefKind }[] {
       const kind: RefKind = citation && (attrName === "href" || attrName === "xlink:href") ? "href" : "asset";
       pushRef(refs, kind, attrName === "srcset" ? splitSrcset(value) : [value]);
     }
+    const style = attribute(tag, "style");
+    if (style !== null) refs.push(...extractCss(style));
+  }
+  for (const match of text.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)) {
+    refs.push(...extractCss(match[1] ?? ""));
+  }
+  for (const match of text.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
+    const attrs = match[1] ?? "";
+    const body = match[2] ?? "";
+    if (/\bsrc\s*=/i.test(attrs) || body.trim() === "") continue;
+    refs.push(...extractScripts(body));
   }
   return refs;
 }

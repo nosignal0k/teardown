@@ -87,6 +87,49 @@ test("shared files are opt-in and must exist", (t) => {
   assert.ok(discoverTopics(site).issues.some((item) => item.slug === "missing-shared"));
 });
 
+test("inline style and script literals cannot point outside the topic", (t) => {
+  const site = tempSite(t);
+  const dot = { "dot.svg": "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>\n", "local.js": "export const ready = true;\n" };
+  writeTopic(site.topicsDir, "style-parent", meta("样式块", "越界"), {
+    "index.html": html(`<style>.x{background:url('../blue-tide/x.svg')}</style>`),
+  });
+  writeTopic(site.topicsDir, "style-local", meta("样式块", "本地"), {
+    "index.html": html(`<style>.x{background:url('./dot.svg')}</style>`),
+    ...dot,
+  });
+  writeTopic(site.topicsDir, "attr-parent", meta("样式属性", "越界"), {
+    "index.html": html(`<div style="background:url('../blue-tide/x.svg')"></div>`),
+  });
+  writeTopic(site.topicsDir, "attr-local", meta("样式属性", "本地"), {
+    "index.html": html(`<div style="background:url('./dot.svg')"></div>`),
+    ...dot,
+  });
+  writeTopic(site.topicsDir, "module-parent", meta("模块", "越界"), {
+    "index.html": html(`<script type="module">import "../blue-tide/other.js";</script>`),
+  });
+  writeTopic(site.topicsDir, "module-local", meta("模块", "本地"), {
+    "index.html": html(`<script type="module">import "./local.js";</script>`),
+    ...dot,
+  });
+  writeTopic(site.topicsDir, "script-url-parent", meta("脚本", "越界"), {
+    "index.html": html(`<script>new URL("../blue-tide/x.svg", import.meta.url);</script>`),
+  });
+  writeTopic(site.topicsDir, "svg-parent", meta("矢量", "越界"), {
+    "index.html": html(""),
+    "mark.svg": `<svg xmlns="http://www.w3.org/2000/svg"><style>.x{fill:url('../blue-tide/x.svg')}</style></svg>\n`,
+  });
+
+  const found = discoverTopics(site);
+  const messages = (slug: string): string => found.issues.filter((item) => item.slug === slug).map((item) => item.message).join("\n");
+  for (const slug of ["style-parent", "attr-parent", "module-parent", "script-url-parent", "svg-parent"]) {
+    assert.match(messages(slug), /路径不能离开主题目录/, slug);
+  }
+  for (const slug of ["style-local", "attr-local", "module-local"]) {
+    assert.equal(messages(slug), "", slug);
+    assert.ok(found.topics.some((topic) => topic.slug === slug), slug);
+  }
+});
+
 test("published topic directory stays empty and extensions are documented once", () => {
   const readme = fs.readFileSync(path.join(repoRoot, "README.md"), "utf8");
   const agents = fs.readFileSync(path.join(repoRoot, "AGENTS.md"), "utf8");
@@ -99,6 +142,9 @@ test("published topic directory stays empty and extensions are documented once",
   assert.doesNotMatch(agents, /topic\.json/);
   assert.match(readme, /npm run build/);
   assert.doesNotMatch(agents, /npm run build/);
+  assert.match(readme, /不在此仓库选择许可证/);
+  assert.doesNotMatch(agents, /不选择许可证|不在此仓库选择许可证/);
+  assert.match(agents, /许可证是否设置，以 README 的贡献约定为准/);
 
   const published = discoverTopics({
     topicsDir: path.join(repoRoot, "topics"),
@@ -108,6 +154,10 @@ test("published topic directory stays empty and extensions are documented once",
   assert.equal(published.topics.length, 0);
   assert.equal(fs.readdirSync(path.join(repoRoot, "topics")).some((name) => fs.statSync(path.join(repoRoot, "topics", name)).isDirectory()), false);
 });
+
+function html(extra: string): string {
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${CATALOG_LINK}${extra}</body></html>\n`;
+}
 
 function meta(title: string, summary: string): Record<string, unknown> {
   return { title, summary, category: "示意", tags: [title] };

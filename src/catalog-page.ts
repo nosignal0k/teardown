@@ -81,6 +81,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
   text-decoration: none;
   min-height: 100%;
 }
+.card[hidden] { display: none; }
 .card h3 { font-size: 1.35rem; }
 .card ul { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .card li { border: 1px solid var(--line); padding: 2px 8px; font-size: 0.85rem; }
