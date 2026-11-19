@@ -74,22 +74,40 @@ test("two reads are collected in call order", () => {
   assert.equal(study.frames(current).some((item) => item.id === "fail"), false);
 });
 
-test("local approval is manual and docker does not reuse that wait", () => {
+test("docker skips the command check only when it has no host mount", () => {
+  assert.deepEqual(study.commandGuard("local"), { skip: false, floor: true, userDeny: true, manual: true, reason: "local" });
+  assert.deepEqual(study.commandGuard("docker"), { skip: true, floor: false, userDeny: true, manual: false, reason: "docker-isolated" });
+  assert.deepEqual(study.commandGuard("docker-mount"), { skip: false, floor: true, userDeny: true, manual: true, reason: "docker-host-mount" });
+  assert.equal(study.commandGuard("modal").skip, true);
+  assert.equal(study.commandGuard("modal").floor, false);
+  assert.equal(study.commandGuard("modal").reason, "modal-class");
+
   let current = study.selectScene(study.createStudy(), "boundary");
   assert.equal(study.frames(current).some((item) => item.id === "wait"), true);
-  assert.equal(study.view(current).sandboxed, false);
   current = study.patch(current, { decision: "deny" });
   assert.equal(study.view(current).frame.executed, false);
-  assert.equal(study.view(current).frame.id, "result");
   current = study.patch(current, { decision: "once" });
   assert.equal(study.view(current).frame.executed, true);
-  assert.equal(study.view(current).sandboxed, false);
   assert.match(study.view(current).frame.lines.join(" "), /主机/);
+  assert.equal(study.view(current).sandboxed, false);
+
   current = study.patch(current, { backend: "docker" });
-  const docker = study.frames(current).map((item) => item.id);
-  assert.deepEqual(docker.includes("wait"), false);
-  assert.equal(docker.at(-1), "mounts");
-  assert.equal(study.frames(current).every((item) => item.sandboxed === false), true);
+  const isolated = study.frames(current);
+  assert.equal(isolated.some((item) => item.id === "wait"), false);
+  assert.match(isolated.map((item) => item.lines.join(" ")).join("\n"), /没有主机路径挂载/);
+  assert.match(isolated.map((item) => item.lines.join(" ")).join("\n"), /用户拒绝规则/);
+  assert.match(isolated.map((item) => item.lines.join(" ")).join("\n"), /硬性底线不在这条提前返回里/);
+  assert.equal(isolated.every((item) => item.sandboxed === false), true);
+
+  current = study.patch(current, { backend: "docker-mount" });
+  const mounted = study.frames(current);
+  assert.equal(mounted.some((item) => item.id === "wait"), true);
+  assert.match(mounted.map((item) => item.lines.join(" ")).join("\n"), /主机路径挂载，不走容器快路径/);
+
+  current = study.patch(current, { backend: "modal" });
+  const modal = study.frames(current).map((item) => item.lines.join(" ")).join("\n");
+  assert.match(modal, /总是跳过|modal、daytona/);
+  assert.doesNotMatch(modal, /没有主机路径挂载/);
 });
 
 test("memory writes stay out of the frozen snapshot until the next session", () => {
@@ -117,7 +135,13 @@ test("compression keeps the archive and cron splits failure modes", () => {
   let current = study.selectScene(study.createStudy(), "compress");
   const blob = JSON.stringify(study.frames(current));
   assert.doesNotMatch(blob, /50%|85%|child session/);
-  assert.match(study.frames(current).map((item) => item.lines.join(" ")).join("\n"), /不画成销毁|可搜索/);
+  const pile = study.frames(current).find((item) => item.id === "pile");
+  const summary = study.frames(current).find((item) => item.id === "summary");
+  assert.ok(pile.meter.input > summary.meter.input);
+  assert.equal(pile.meter.archive, 100);
+  assert.equal(summary.meter.archive, 100);
+  assert.equal(pile.meter.summary, 0);
+  assert.ok(summary.meter.summary > 0);
   current = study.patch(current, { compressBranch: "miss" });
   assert.equal(study.frames(current).at(-1)?.healed, false);
 

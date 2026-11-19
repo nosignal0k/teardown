@@ -32,8 +32,9 @@ export const NODES = Object.freeze({
   provider: Object.freeze({ title: "Provider", duty: "选定模型和 API 格式，把内部消息发出去。", file: "agent/agent_init.py" }),
   model: Object.freeze({ title: "模型服务", duty: "进程之外的服务。只返回文本或工具请求。", file: "不在本地 Python 进程里" }),
   tools: Object.freeze({ title: "工具分发", duty: "运行时解析名字和参数，再调用处理器。异常包成错误结果。", file: "model_tools.py · agent/tool_executor.py" }),
-  local: Object.freeze({ title: "本机", duty: "终端在主机权限内执行，没有容器隔离。", file: "tools/approval.py" }),
-  docker: Object.freeze({ title: "容器", duty: "这份代码会跳过危险命令检查。挂载和传入凭据仍可被读取。", file: "tools/approval.py" }),
+  local: Object.freeze({ title: "本机", duty: "终端在主机权限内执行，没有容器隔离。", file: "tools/terminal_tool.py" }),
+  docker: Object.freeze({ title: "Docker", duty: "没挂主机路径时，终端的危险命令检查会提前返回。挂了主机路径就不跳过。", file: "tools/approval.py" }),
+  modal: Object.freeze({ title: "Modal 一类", duty: "modal、daytona、vercel_sandbox 总是跳过这层命令检查，不看有没有主机路径。", file: "tools/approval.py" }),
   file: Object.freeze({ title: "文件工具", duty: "不经过终端框。写入范围只约束 write_file 和 patch。", file: "agent/file_safety.py" }),
   session: Object.freeze({ title: "会话库", duty: "SQLite 保存消息、工具调用和工具结果，并可全文检索。", file: "~/.hermes/state.db" }),
   memory: Object.freeze({ title: "短记忆", duty: "少量事实。提示里用的是加载时的快照。", file: "MEMORY.md / USER.md" }),
@@ -41,6 +42,20 @@ export const NODES = Object.freeze({
 });
 
 const SCENE_IDS = SCENES.map((scene) => scene.id);
+
+/** 终端命令的 check_all_command_guards。不是 execute_code。 */
+export function commandGuard(backend) {
+  if (backend === "docker") {
+    return { skip: true, floor: false, userDeny: true, manual: false, reason: "docker-isolated" };
+  }
+  if (backend === "modal") {
+    return { skip: true, floor: false, userDeny: true, manual: false, reason: "modal-class" };
+  }
+  if (backend === "docker-mount") {
+    return { skip: false, floor: true, userDeny: true, manual: true, reason: "docker-host-mount" };
+  }
+  return { skip: false, floor: true, userDeny: true, manual: true, reason: "local" };
+}
 
 export function compareCsv(sample = SAMPLE) {
   const yesterday = sample.yesterday;
@@ -88,39 +103,47 @@ function frame(partial) {
 function purposeFrames() {
   const brief = briefingLines();
   return [
-    frame({ id: "task", title: "提出任务", actor: "用户", hot: ["user"], kind: "control", lines: ["比较昨日与今日 CSV", "生成简报"], askNote: "用户只发来一句话。", runNote: "运行时还没有执行任何工具。" }),
-    frame({ id: "need", title: "需要文件", actor: "运行时", hot: ["agent"], kind: "control", lines: ["回答需要两份表", "上下文里还没有数字"], askNote: "只回文本的示意会让模型直接作答。", runNote: "Hermes 准备把这句话放进带工具的循环。" }),
-    frame({ id: "request", title: "请求读取", actor: "模型", hot: ["model"], kind: "data", lines: ["tool_call", "read_file · yesterday.csv"], askNote: "这一步是模型在请求工具。", runNote: "运行时尚未碰文件。模型不执行操作系统命令。" }),
-    frame({ id: "data", title: "获得数据", actor: "运行时", hot: ["tool"], kind: "data", lines: ["yesterday.csv", "订单 100 · 收入 10000"], askNote: "模型只提出了读取。", runNote: "这一步是运行时实际读取，并把结果送回。", executed: true }),
-    frame({ id: "compute", title: "再次请求", actor: "模型", hot: ["model"], kind: "data", lines: ["输入含上一则工具结果", "教学简化：今日文件走同一种往返"], askNote: "模型根据工具结果继续请求或作答。", runNote: "运行时把结果放进下一次模型调用，自己不算成模型。" }),
-    frame({ id: "brief", title: "生成简报", actor: "模型", hot: ["brief"], kind: "data", lines: brief, askNote: "最终文本由模型返回。", runNote: "运行时负责收下文本并准备保存。没有改模型权重。" }),
+    frame({ id: "task", title: "提出任务", actor: "用户", hot: ["user"], edge: "to-agent", token: "用户消息", kind: "control", lines: ["比较昨日与今日 CSV", "生成简报"], askNote: "用户只发来一句话。", runNote: "运行时还没有执行任何工具。" }),
+    frame({ id: "need", title: "需要文件", actor: "运行时", hot: ["agent"], edge: "to-model", token: "任务", kind: "control", lines: ["回答需要两份表", "上下文里还没有数字"], askNote: "只回文本的示意会让模型直接作答。", runNote: "Hermes 准备把这句话放进带工具的循环。" }),
+    frame({ id: "request", title: "请求读取", actor: "模型", hot: ["model"], edge: "to-tool", token: "tool_call", kind: "data", lines: ["tool_call", "read_file · yesterday.csv"], askNote: "这一步是模型在请求工具。", runNote: "运行时尚未碰文件。模型不执行操作系统命令。" }),
+    frame({ id: "data", title: "获得数据", actor: "运行时", hot: ["tool"], edge: "back-model", token: "订单 100", kind: "data", lines: ["yesterday.csv", "订单 100 · 收入 10000"], askNote: "模型只提出了读取。", runNote: "这一步是运行时实际读取，并把结果送回。", executed: true }),
+    frame({ id: "compute", title: "再次请求", actor: "模型", hot: ["model"], edge: "back-model", token: "工具结果", kind: "data", lines: ["输入含上一则工具结果", "教学简化：今日文件走同一种往返"], askNote: "模型根据工具结果继续请求或作答。", runNote: "运行时把结果放进下一次模型调用，自己不算成模型。" }),
+    frame({ id: "brief", title: "生成简报", actor: "模型", hot: ["brief"], edge: "to-brief", token: "简报", kind: "data", lines: brief, askNote: "最终文本由模型返回。", runNote: "运行时负责收下文本并准备保存。没有改模型权重。" }),
   ];
 }
 
 function mapFrames(study) {
-  const backend = study.backend === "docker" ? "docker" : "local";
+  const guard = commandGuard(study.backend);
+  const where = study.backend === "modal" ? "modal" : study.backend === "local" ? "local" : "docker";
+  const executeLines = guard.reason === "docker-isolated"
+    ? ["终端在隔离的 Docker 里", "没挂主机路径，危险命令检查提前返回"]
+    : guard.reason === "docker-host-mount"
+      ? ["终端在 Docker 里，但挂了主机路径", "不跳过，走普通检查"]
+      : guard.reason === "modal-class"
+        ? ["这一类后端总是跳过命令检查", "文件工具仍不进这个框"]
+        : ["终端走本机", "没有容器隔离"];
   return [
-    frame({ id: "arrive", title: "输入抵达", actor: "入口", hot: ["cli", "gateway"], kind: "control", lines: ["CLI 或 Gateway", "同一句 CSV 任务"], askNote: "入口不同，核心相同。", runNote: "平台差异留在入口，不画成另一个代理。" }),
-    frame({ id: "prepare", title: "准备上下文", actor: "运行时", hot: ["agent"], kind: "control", lines: ["会话历史", "记忆快照", "技能索引"], askNote: "模型还没被调用。", runNote: "AIAgent 组装这一轮要送出的消息。" }),
-    frame({ id: "request", title: "模型请求", actor: "运行时", hot: ["provider", "model"], kind: "data", lines: ["Provider 选择 API 格式", "请求发往外部模型"], askNote: "模型服务在进程之外。", runNote: "本地代码发出请求，不把模型画进 Hermes 进程。" }),
-    frame({ id: "dispatch", title: "工具分发", actor: "运行时", hot: ["tools"], kind: "control", lines: ["解析工具名和参数", "再找处理器"], askNote: "模型给出的是请求。", runNote: "分发由运行时完成。异常会包成错误结果。" }),
-    frame({ id: "execute", title: "后端执行", actor: "运行时", hot: [backend, "file"], kind: "warn", lines: backend === "docker" ? ["终端走容器", "文件工具不进这个框"] : ["终端走本机", "文件工具不进这个框"], askNote: "不是每个工具都走终端。", runNote: backend === "docker" ? "容器会跳过危险命令检查，但不是空的保险。" : "本机执行没有容器隔离。", executed: true, sandboxed: false }),
-    frame({ id: "save", title: "保存与回答", actor: "运行时", hot: ["session", "memory", "skill"], kind: "persist", lines: ["会话写入库", "记忆和技能另算"], askNote: "回答文本已经由模型返回。", runNote: "保存的是记录，不是模型权重。" }),
+    frame({ id: "arrive", title: "输入抵达", actor: "入口", hot: ["cli", "gateway"], edge: "to-core", token: "用户消息", kind: "control", lines: ["CLI 或 Gateway", "同一句 CSV 任务"], askNote: "入口不同，核心相同。", runNote: "平台差异留在入口，不画成另一个代理。" }),
+    frame({ id: "prepare", title: "准备上下文", actor: "运行时", hot: ["agent"], edge: "to-core", token: "历史", kind: "control", lines: ["会话历史", "记忆快照", "技能索引"], askNote: "模型还没被调用。", runNote: "AIAgent 组装这一轮要送出的消息。" }),
+    frame({ id: "request", title: "模型请求", actor: "运行时", hot: ["provider", "model"], edge: "to-model", token: "请求", kind: "data", lines: ["Provider 选择 API 格式", "请求发往外部模型"], askNote: "模型服务在进程之外。", runNote: "本地代码发出请求，不把模型画进 Hermes 进程。" }),
+    frame({ id: "dispatch", title: "工具分发", actor: "运行时", hot: ["tools"], edge: "to-exec", token: "tool_call", kind: "control", lines: ["解析工具名和参数", "再找处理器"], askNote: "模型给出的是请求。", runNote: "分发由运行时完成。异常会包成错误结果。" }),
+    frame({ id: "execute", title: "后端执行", actor: "运行时", hot: [where, "file"], edge: "to-exec", token: "执行", kind: "warn", lines: executeLines, askNote: "不是每个工具都走终端。", runNote: executeLines[1] ?? executeLines[0], executed: true, sandboxed: false }),
+    frame({ id: "save", title: "保存与回答", actor: "运行时", hot: ["session", "memory", "skill"], edge: "to-store", token: "记录", kind: "persist", lines: ["会话写入库", "记忆和技能另算"], askNote: "回答文本已经由模型返回。", runNote: "保存的是记录，不是模型权重。" }),
   ];
 }
 
 function loopFrames(study) {
   const head = [
-    frame({ id: "lookup", title: "查会话", actor: "运行时", hot: ["entry", "db"], kind: "persist", lines: ["按会话取出历史", "不是把整个库重发"], askNote: "先找已有会话。", runNote: "读取会话库是运行时的事。" }),
-    frame({ id: "assemble", title: "组装输入", actor: "运行时", hot: ["agent"], kind: "control", lines: ["系统提示复用已保存的字节", "技能先只放索引"], askNote: "模型即将看到的是这一包消息。", runNote: "运行时组包。记忆快照不会因为刚写磁盘就重绘。" }),
-    frame({ id: "request", title: "请求模型", actor: "运行时", hot: ["model"], kind: "data", lines: ["role: 已组装的消息", "工具 schema 随请求给出"], askNote: "一次用户消息可以对应多次模型请求。", runNote: "请求由运行时发出。" }),
+    frame({ id: "lookup", title: "查会话", actor: "运行时", hot: ["db"], edge: "to-db", token: "会话键", kind: "persist", lines: ["按会话取出历史", "不是把整个库重发"], askNote: "先找已有会话。", runNote: "读取会话库是运行时的事。" }),
+    frame({ id: "assemble", title: "组装输入", actor: "运行时", hot: ["agent"], edge: "to-model", token: "消息包", kind: "control", lines: ["系统提示复用已保存的字节", "技能先只放索引"], askNote: "模型即将看到的是这一包消息。", runNote: "运行时组包。记忆快照不会因为刚写磁盘就重绘。" }),
+    frame({ id: "request", title: "请求模型", actor: "运行时", hot: ["model"], edge: "to-model", token: "请求", kind: "data", lines: ["role: 已组装的消息", "工具 schema 随请求给出"], askNote: "一次用户消息可以对应多次模型请求。", runNote: "请求由运行时发出。" }),
   ];
   if (study.loopBranch === "error") {
     return [
       ...head,
-      frame({ id: "call", title: "收到 tool_call", actor: "模型", hot: ["model", "tool"], kind: "data", lines: ["read_file", "yesterday.csv"], askNote: "模型请求读取。", runNote: "运行时还没读成。" }),
-      frame({ id: "fail", title: "执行失败", actor: "运行时", hot: ["tool"], kind: "warn", lines: ["error", "文件不可读（预设）"], askNote: "失败不是模型的内心活动。", runNote: "处理器异常被包成错误结果。", executed: true, healed: false }),
-      frame({ id: "back", title: "错误回到模型", actor: "运行时", hot: ["model", "db"], kind: "data", lines: ["role: tool", "关联原来的 tool_call id"], askNote: "模型只是又收到一则消息。", runNote: "运行时把错误送回，不保证它能修好。" }),
+      frame({ id: "call", title: "收到 tool_call", actor: "模型", hot: ["model"], edge: "to-tool", token: "tool_call", kind: "data", lines: ["read_file", "yesterday.csv"], askNote: "模型请求读取。", runNote: "运行时还没读成。" }),
+      frame({ id: "fail", title: "执行失败", actor: "运行时", hot: ["tool"], edge: "to-tool", token: "error", kind: "warn", lines: ["error", "文件不可读（预设）"], askNote: "失败不是模型的内心活动。", runNote: "处理器异常被包成错误结果。", executed: true, healed: false }),
+      frame({ id: "back", title: "错误回到模型", actor: "运行时", hot: ["model"], edge: "back-model", token: "错误结果", kind: "data", lines: ["role: tool", "关联原来的 tool_call id"], askNote: "模型只是又收到一则消息。", runNote: "运行时把错误送回，不保证它能修好。" }),
       frame({ id: "stop", title: "停止", actor: "运行时", hot: ["agent"], kind: "warn", lines: ["预设：停止", "不是必然自愈"], askNote: "模型可以再试，也可以停。", runNote: "这条演示选择停止。", healed: false }),
     ];
   }
@@ -137,37 +160,46 @@ function loopFrames(study) {
   }
   return [
     ...head,
-    frame({ id: "call", title: "收到 tool_call", actor: "模型", hot: ["model", "tool"], kind: "data", lines: ["read_file", "yesterday.csv"], askNote: "模型决定请求这个工具。", runNote: "运行时只是收到请求。" }),
-    frame({ id: "run", title: "执行读取", actor: "运行时", hot: ["tool"], kind: "data", lines: ["订单 100", "收入 10000"], askNote: "模型没有碰文件。", runNote: "运行时执行读取。", executed: true }),
-    frame({ id: "append", title: "追加结果", actor: "运行时", hot: ["db"], kind: "persist", lines: ["role: tool", "对上 tool_call id"], askNote: "结果成为历史的一则。", runNote: "工具请求在执行前已经写入会话。这一步再追加结果。" }),
-    frame({ id: "again", title: "再次请求", actor: "运行时", hot: ["model"], kind: "data", lines: ["历史里已经有工具结果", "今日文件用同一种往返"], askNote: "这是另一次模型调用。", runNote: "教学简化：第二次读取不再展开。" }),
+    frame({ id: "call", title: "收到 tool_call", actor: "模型", hot: ["model"], edge: "to-tool", token: "tool_call", kind: "data", lines: ["read_file", "yesterday.csv"], askNote: "模型决定请求这个工具。", runNote: "运行时只是收到请求。" }),
+    frame({ id: "run", title: "执行读取", actor: "运行时", hot: ["tool"], edge: "to-tool", token: "订单 100", kind: "data", lines: ["订单 100", "收入 10000"], askNote: "模型没有碰文件。", runNote: "运行时执行读取。", executed: true }),
+    frame({ id: "append", title: "追加结果", actor: "运行时", hot: ["db"], edge: "to-db", token: "tool 结果", kind: "persist", lines: ["role: tool", "对上 tool_call id"], askNote: "结果成为历史的一则。", runNote: "工具请求在执行前已经写入会话。这一步再追加结果。" }),
+    frame({ id: "again", title: "再次请求", actor: "运行时", hot: ["model"], edge: "back-model", token: "工具结果", kind: "data", lines: ["历史里已经有工具结果", "今日文件用同一种往返"], askNote: "这是另一次模型调用。", runNote: "教学简化：第二次读取不再展开。" }),
     frame({ id: "answer", title: "最终回答", actor: "模型", hot: ["model"], kind: "data", lines: briefingLines(), askNote: "模型返回文本，不是工具请求。", runNote: "运行时准备结束这一轮。" }),
     frame({ id: "save", title: "保存", actor: "运行时", hot: ["db"], kind: "persist", lines: ["简报写入会话库"], askNote: "用户终于看到简报。", runNote: "会话在工具执行前后都会落盘。这里只标出这一轮结束时的保存。" }),
   ];
 }
 
 function boundaryFrames(study) {
-  const who = frame({ id: "who", title: "谁能发来", actor: "运行时", hot: ["who"], kind: "control", lines: ["模拟：个人会话已在允许范围", "群聊和操作员例外不在这幕展开"], askNote: "身份授权是第一套边界。", runNote: "没通过授权的消息不会进入循环。" });
-  const request = frame({ id: "request", title: "命令请求", actor: "模型", hot: ["what"], kind: "warn", lines: ["模拟操作：清理旧输出目录", "页面不展示可复制命令"], askNote: "模型可以请求一个命令。", runNote: "还没有执行。", sandboxed: false });
-  if (study.backend === "docker") {
+  const guard = commandGuard(study.backend);
+  const who = frame({ id: "who", title: "谁能发来", actor: "运行时", hot: ["who"], edge: "to-where", token: "会话", kind: "control", lines: ["模拟：个人会话已在允许范围", "群聊和操作员例外不在这幕展开"], askNote: "身份授权是第一套边界。", runNote: "没通过授权的消息不会进入循环。" });
+  const request = frame({ id: "request", title: "命令请求", actor: "模型", hot: ["what"], edge: "to-what", token: "命令请求", kind: "warn", lines: ["模拟操作：清理旧输出目录", "页面不展示可复制命令"], askNote: "模型可以请求一个命令。", runNote: "还没有执行。", sandboxed: false });
+  if (guard.reason === "docker-isolated") {
     return [
       who,
       request,
-      frame({ id: "skip", title: "跳过命令检查", actor: "运行时", hot: ["where"], kind: "warn", lines: ["docker 跳过危险命令检查", "用户自己的拒绝规则仍会看"], askNote: "不要把人工批准画成这里的步骤。", runNote: "隔离后端不等于每个工具都先问人。", sandboxed: false, executed: false }),
-      frame({ id: "mounts", title: "挂载仍可读", actor: "运行时", hot: ["where"], kind: "warn", lines: ["容器里的代码能读挂载和传入凭据", "这不是一张空白的保险单"], askNote: "容器是边界的一种，不是空的保险。", runNote: "这幕不播放本机的人工批准。", sandboxed: false }),
+      frame({ id: "skip", title: "隔离才跳过", actor: "运行时", hot: ["where"], edge: "to-where", token: "无主机挂载", kind: "warn", lines: ["Docker 且没有主机路径挂载", "危险命令检查提前返回", "这一支仍看用户拒绝规则", "硬性底线不在这条提前返回里"], askNote: "不要把人工批准画成这里的步骤。", runNote: "跳过只在 has_host_access 为假时发生。", sandboxed: false, executed: false }),
+      frame({ id: "scope", title: "范围就到这里", actor: "运行时", hot: ["where"], edge: "to-where", token: "仅终端检查", kind: "warn", lines: ["说的是 terminal 的命令检查", "execute_code 的隔离返回不看拒绝规则", "传入容器的环境变量仍可能被读到"], askNote: "挂载主机路径是另一支，不会跳过。", runNote: "这幕不播放本机的人工批准。", sandboxed: false }),
     ];
   }
+  if (guard.reason === "modal-class") {
+    return [
+      who,
+      request,
+      frame({ id: "skip", title: "这一类总是跳过", actor: "运行时", hot: ["where"], edge: "to-where", token: "modal", kind: "warn", lines: ["modal、daytona、vercel_sandbox", "就算标了主机访问也不把检查加回来", "终端路径仍看用户拒绝规则", "硬性底线不在提前返回里"], askNote: "这和 Docker 是否挂载不是同一条规则。", runNote: "提前返回里没有硬性底线。", sandboxed: false, executed: false }),
+    ];
+  }
+  const mounted = guard.reason === "docker-host-mount";
   const decision = study.decision;
   const result = decision === "once"
-    ? frame({ id: "result", title: "批准一次", actor: "用户", hot: ["what", "where"], kind: "warn", lines: ["在主机执行这一次", "没有容器隔离", "停止不会收回已经写出的内容"], askNote: "批准的是这一次命令。", runNote: "执行点在主机上。", executed: true, sandboxed: false })
+    ? frame({ id: "result", title: "批准一次", actor: "用户", hot: ["what", "where"], edge: "to-what", token: "批准一次", kind: "warn", lines: mounted ? ["挂了主机路径，所以走到普通检查", "演示仍是手动批准一次", "停止不会收回已经写出的内容"] : ["在主机执行这一次", "没有容器隔离", "停止不会收回已经写出的内容"], askNote: "批准的是这一次命令。", runNote: mounted ? "执行点在挂了主机路径的容器里。" : "执行点在主机上。", executed: true, sandboxed: false })
     : decision === "deny"
-      ? frame({ id: "result", title: "已经拒绝", actor: "用户", hot: ["what"], kind: "stop", lines: ["命令没有执行"], askNote: "拒绝停在批准之前。", runNote: "运行时不执行。", executed: false, sandboxed: false })
-      : frame({ id: "result", title: "仍在等待", actor: "用户", hot: ["what"], kind: "warn", lines: ["还没有批准", "也还没有执行"], askNote: "等待是这条演示的默认。", runNote: "local + manual 才会停在这里。", executed: false, sandboxed: false });
+      ? frame({ id: "result", title: "已经拒绝", actor: "用户", hot: ["what"], edge: "to-what", token: "拒绝", kind: "stop", lines: ["命令没有执行"], askNote: "拒绝停在批准之前。", runNote: "运行时不执行。", executed: false, sandboxed: false })
+      : frame({ id: "result", title: "仍在等待", actor: "用户", hot: ["what"], edge: "to-what", token: "等待", kind: "warn", lines: ["还没有批准", "也还没有执行"], askNote: "等待是这条演示的默认。", runNote: "这是显式的 manual，不是全局默认。", executed: false, sandboxed: false });
   return [
     who,
     request,
-    frame({ id: "match", title: "匹配危险规则", actor: "运行时", hot: ["what"], kind: "warn", lines: ["先看硬性底线", "再看危险命令模式"], askNote: "匹配发生在执行前。", runNote: "YOLO 也不能绕过硬性底线。", sandboxed: false }),
-    frame({ id: "wait", title: "等待批准", actor: "用户", hot: ["what"], kind: "warn", lines: ["显式配置：local + manual", "不是所有工具的全局默认"], askNote: "请在模拟卡上选择。", runNote: "智能模式可以由辅助模型自动放过低风险命令。这幕不演那种模式。", sandboxed: false }),
+    frame({ id: "match", title: "先走底线", actor: "运行时", hot: ["what"], edge: "to-what", token: "普通检查", kind: "warn", lines: mounted ? ["主机路径挂载，不走容器快路径", "这一支才先跑硬性底线"] : ["本机没有容器快路径", "这一支才先跑硬性底线"], askNote: "底线只在没提前返回的那一支前面。", runNote: "YOLO 在这一支绕不过底线。隔离容器的提前返回到不了这里。", sandboxed: false }),
+    frame({ id: "wait", title: "等待批准", actor: "用户", hot: ["what"], edge: "to-what", token: "等待人", kind: "warn", lines: ["显式配置：manual", "不是所有工具的全局默认"], askNote: "请在模拟卡上选择。", runNote: "智能模式可以由辅助模型自动放过低风险命令。这幕不演那种模式。", sandboxed: false }),
     result,
   ];
 }
@@ -193,24 +225,29 @@ export function memoryPlanes(study, phase) {
   return { disk, snapshot, weightsChanged: false };
 }
 
+function occupy(input, archive, old, summary, recent) {
+  return { input, archive, old, summary, recent };
+}
+
 function compressFrames(study) {
+  const missed = study.compressBranch === "miss";
   const base = [
-    frame({ id: "pile", title: "输出累积", actor: "运行时", hot: ["input", "archive"], kind: "data", lines: ["工具输出又长了一截", "会话库里有原文"], askNote: "上下文和磁盘不是同一叠纸。", runNote: "原文先在库里。" }),
-    frame({ id: "threshold", title: "接近阈值", actor: "运行时", hot: ["input"], kind: "control", lines: ["按这条配置的阈值判断", "主图不写死百分比"], askNote: "不是所有模型到同一个比例就压缩。", runNote: "小于一定窗口时，代码还会把比例抬高。" }),
-    frame({ id: "prune", title: "旧输出精简", actor: "运行时", hot: ["input"], kind: "warn", lines: ["旧的工具输出被缩短", "原文改标成可搜索"], askNote: "精简的是这一轮要送出的内容。", runNote: "不把原文画成销毁。" }),
-    frame({ id: "summary", title: "生成摘要", actor: "模型", hot: ["input"], kind: "data", lines: study.compressBranch === "miss" ? ["摘要：订单与收入上升", "客单价没有写进摘要（预设遗漏）"] : ["摘要盖住更早的来回", "近期消息另外保留"], askNote: "摘要由另一次模型调用生成，可能漏细节。", runNote: "运行时用摘要替换要送出的旧段。" }),
+    frame({ id: "pile", title: "输出累积", actor: "运行时", hot: ["input", "archive"], token: "工具输出", meter: occupy(92, 100, 78, 0, 14), kind: "data", lines: ["模拟：本轮输入 92", "模拟：会话库 100"], askNote: "上下文和磁盘不是同一叠纸。", runNote: "原文先在库里。" }),
+    frame({ id: "threshold", title: "接近阈值", actor: "运行时", hot: ["input"], token: "再长一截", meter: occupy(96, 100, 82, 0, 14), kind: "control", lines: ["模拟：输入升到 96", "库仍是 100"], askNote: "不是所有模型到同一个比例就压缩。", runNote: "小于一定窗口时，代码还会把比例抬高。" }),
+    frame({ id: "prune", title: "旧输出精简", actor: "运行时", hot: ["input"], token: "缩短", meter: occupy(64, 100, 18, 0, 46), kind: "warn", lines: ["模拟：输入降到 64", "库仍是 100，原文还在"], askNote: "精简的是这一轮要送出的内容。", runNote: "不把原文画成销毁。" }),
+    frame({ id: "summary", title: "生成摘要", actor: "模型", hot: ["input"], token: missed ? "摘要缺客单价" : "摘要", meter: missed ? occupy(44, 100, 0, 20, 24) : occupy(46, 100, 0, 24, 22), kind: "data", lines: missed ? ["模拟：摘要 20，近期 24", "客单价没有写进摘要"] : ["模拟：摘要 24，近期 22", "库仍是 100"], askNote: "摘要由另一次模型调用生成，可能漏细节。", runNote: "运行时用摘要替换要送出的旧段。" }),
   ];
   if (study.compressBranch === "miss") {
     return [
       ...base,
-      frame({ id: "gap", title: "摘要有缺口", actor: "模型", hot: ["input"], kind: "warn", lines: ["简报需要客单价", "摘要里没有"], askNote: "压缩是有损的。", runNote: "不保证每次都能从摘要恢复。", healed: false }),
-      frame({ id: "search", title: "尝试取回", actor: "运行时", hot: ["archive"], kind: "persist", lines: ["session_search 查会话库", "预设：能找到旧工具结果，但不是每次都有"], askNote: "检索是另一次明确的工具请求。", runNote: "全文检索不是向量数据库。", healed: false }),
+      frame({ id: "gap", title: "摘要有缺口", actor: "模型", hot: ["input"], token: "缺客单价", meter: occupy(44, 100, 0, 20, 24), kind: "warn", lines: ["模拟：输入 44，库 100", "摘要里没有客单价"], askNote: "压缩是有损的。", runNote: "不保证每次都能从摘要恢复。", healed: false }),
+      frame({ id: "search", title: "尝试取回", actor: "运行时", hot: ["archive"], edge: "to-archive", token: "检索", meter: occupy(44, 100, 0, 20, 24), kind: "persist", lines: ["从库里找，不从摘要里变出来", "预设：能找到，但不是每次都有"], askNote: "检索是另一次明确的工具请求。", runNote: "全文检索不是向量数据库。", healed: false }),
     ];
   }
   return [
     ...base,
-    frame({ id: "tail", title: "留下近期", actor: "运行时", hot: ["input"], kind: "control", lines: ["近期消息保持原文", "更早的来回变成摘要"], askNote: "模型下一跳看不到全部历史。", runNote: "保留多少由配置决定，主图不写死条数。" }),
-    frame({ id: "continue", title: "继续请求", actor: "运行时", hot: ["model"], kind: "data", lines: ["送出的是摘要加近期消息", "会话 id 默认不变"], askNote: "继续的是同一次任务。", runNote: "默认原地压缩，不新开一个子会话。细节在折叠说明里。" }),
+    frame({ id: "tail", title: "留下近期", actor: "运行时", hot: ["input"], token: "近期", meter: occupy(40, 100, 0, 18, 22), kind: "control", lines: ["模拟：输入 40，库 100", "近期仍是原文"], askNote: "模型下一跳看不到全部历史。", runNote: "保留多少由配置决定，主图不写死条数。" }),
+    frame({ id: "continue", title: "继续请求", actor: "运行时", hot: ["model"], edge: "to-model", token: "摘要+近期", meter: occupy(40, 100, 0, 18, 22), kind: "data", lines: ["送出的是摘要加近期消息", "会话 id 默认不变"], askNote: "继续的是同一次任务。", runNote: "默认原地压缩，不新开一个子会话。细节在折叠说明里。" }),
   ];
 }
 
@@ -241,7 +278,7 @@ function againFrames(study) {
       frame({ id: "fallback", title: "备用提供者", actor: "运行时", hot: ["model"], kind: "stop", lines: ["只有配置了 fallback 才会再试", "演示停在这里，不保证换成功"], askNote: "备用链不是默认的无限重试。", runNote: "没配备用，就停止。", ran: false, delivered: false, healed: false }),
     ];
   }
-  const run = frame({ id: "run", title: "执行循环", actor: "运行时", hot: ["tool", "model"], kind: "data", lines: ["仍是模型请求、运行时执行", "无人值守时危险命令默认拒绝"], askNote: "定时没有取消工具循环。", runNote: "默认 deny 可以被配置改掉，容器后端还有另一套例外。", executed: true, sandboxed: false });
+  const run = frame({ id: "run", title: "执行循环", actor: "运行时", hot: ["tool", "model"], edge: "to-tool", token: "工具请求", kind: "data", lines: ["仍是模型请求、运行时执行", "无人值守时危险命令默认拒绝"], askNote: "定时没有取消工具循环。", runNote: "没挂主机路径的 Docker 才会跳过危险命令检查。挂了就回到普通检查。", executed: true, sandboxed: false });
   const done = frame({ id: "done", title: "任务完成", actor: "模型", hot: ["agent"], kind: "data", lines: briefingLines(), askNote: "简报已经生成。", runNote: "生成不等于已经送到聊天里。", ran: true, delivered: false });
   if (study.delivery === "fail") {
     return [plan, due, fresh, skill, run, done, frame({ id: "undelivered", title: "投递失败", actor: "运行时", hot: ["deliver"], kind: "stop", lines: ["任务已完成", "投递失败"], askNote: "两件事分开。", runNote: "不合成一个成功勾。", ran: true, delivered: false })];

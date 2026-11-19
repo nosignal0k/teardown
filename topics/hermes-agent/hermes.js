@@ -1,6 +1,7 @@
 import {
   NODES,
   SCENES,
+  commandGuard,
   frames,
   intervalMs,
   patch,
@@ -70,6 +71,7 @@ function render() {
 
   if (panel) {
     paintHot(panel, seen);
+    paintFlow(panel, seen);
     paintBeats(panel, seen);
     paintTicket(panel, seen);
     const memory = panel.querySelector("[data-memory-label]");
@@ -94,6 +96,36 @@ function paintHot(panel, seen) {
     el.classList.toggle("is-focus", state.scene === "map" && state.focus === id);
     el.classList.toggle("is-file", state.showFileRoot && id === "file");
   }
+}
+
+function paintFlow(panel, seen) {
+  for (const edge of panel.querySelectorAll("[data-edge]")) {
+    edge.classList.toggle("is-live", edge.dataset.edge === seen.frame.edge);
+  }
+  for (const old of panel.querySelectorAll(".packet")) old.remove();
+  const token = seen.frame.token;
+  const hostId = seen.frame.hot?.[0];
+  if (typeof token === "string" && token !== "" && typeof hostId === "string") {
+    const host = panel.querySelector(`[data-node="${hostId}"]`);
+    if (host) {
+      const packet = document.createElement("span");
+      packet.className = "packet";
+      packet.textContent = token;
+      host.append(packet);
+    }
+  }
+  const meter = seen.frame.meter;
+  if (!meter) return;
+  for (const name of ["old", "summary", "recent", "archive"]) {
+    const part = panel.querySelector(`[data-part="${name}"]`);
+    if (part) part.style.width = `${meter[name]}%`;
+  }
+  const input = panel.querySelector("[data-readout='input']");
+  const archive = panel.querySelector("[data-readout='archive']");
+  if (input) input.textContent = `模拟 ${meter.input}`;
+  if (archive) archive.textContent = `模拟 ${meter.archive}，原文还在`;
+  const bar = panel.querySelector("[data-node='input'] .bar");
+  if (bar) bar.setAttribute("aria-label", `本轮输入 ${meter.input}：旧输出 ${meter.old}，摘要 ${meter.summary}，近期 ${meter.recent}。会话库 ${meter.archive}`);
 }
 
 function paintBeats(panel, seen) {
@@ -159,7 +191,7 @@ function paintPressed() {
     else if (action === "trade") pressed = tradeId === (button.dataset.trade ?? "");
     else continue;
     button.setAttribute("aria-pressed", pressed ? "true" : "false");
-    if (action === "decision") button.disabled = state.backend === "docker";
+    if (action === "decision") button.disabled = !commandGuard(state.backend).manual;
   }
 }
 
@@ -204,9 +236,12 @@ function onClick(event) {
     const node = button.dataset.node ?? "";
     if (NODES[node]) apply(patch(state, { focus: node }));
   }
-  else if (action === "backend") apply(patch(state, { backend: value === "docker" ? "docker" : "local" }));
+  else if (action === "backend") {
+    const backend = ["local", "docker", "docker-mount", "modal"].includes(value) ? value : "local";
+    apply(patch(state, { backend }));
+  }
   else if (action === "decision") {
-    if (state.backend !== "docker") apply(patch(state, { decision: value === "deny" ? "deny" : "once" }));
+    if (commandGuard(state.backend).manual) apply(patch(state, { decision: value === "deny" ? "deny" : "once" }));
   }
   else if (action === "file-root") apply(patch(state, { showFileRoot: !state.showFileRoot, focus: "file" }));
   else if (action === "loop") apply(patch(state, { loopBranch: value === "error" || value === "parallel" ? value : "read" }));

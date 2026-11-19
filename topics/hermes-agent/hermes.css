@@ -225,7 +225,66 @@ button[aria-pressed="true"]:focus-visible, .scene-link.is-current:focus-visible 
   .rail { display: grid; position: sticky; top: 12px; }
   .scene-link { flex: none; }
 }
+.flow { display: flex; flex-direction: column; align-items: stretch; gap: 0; margin: 0; padding: 0; list-style: none; }
+.flow > li, .flow > .bound, .flow .lane { flex: 0 0 auto; list-style: none; }
+.edge {
+  position: relative;
+  align-self: flex-start;
+  flex: 0 0 16px;
+  width: 3px;
+  height: 16px;
+  margin-left: 1.1rem;
+  background: var(--line);
+}
+.edge::after {
+  content: "";
+  position: absolute;
+  left: -4px;
+  bottom: -1px;
+  border: 5px solid transparent;
+  border-top: 7px solid var(--line);
+}
+.edge.is-live { background: var(--copper); }
+.edge.is-live::after { border-top-color: var(--copper); }
+.edge span {
+  position: absolute;
+  left: 14px;
+  top: -2px;
+  white-space: nowrap;
+  color: var(--copper);
+  font-size: 0.78rem;
+}
+.packet {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 8px;
+  background: var(--copper);
+  color: #fffaf3;
+  font-size: 0.82rem;
+  animation: packet-in 280ms ease;
+}
+.bar { display: flex; height: 18px; background: #ece7de; overflow: hidden; }
+.bar i { display: block; height: 100%; }
+.bar i[data-part="old"] { background: var(--copper); }
+.bar i[data-part="summary"] { background: var(--violet); }
+.bar i[data-part="recent"] { background: var(--navy); }
+.bar i[data-part="archive"] { background: var(--teal); }
+.meter-caption, .meter-legend { color: var(--muted); font-size: 0.92rem; }
+.meter-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+@keyframes packet-in {
+  from { transform: translateY(-8px); opacity: 0.15; }
+  to { transform: none; opacity: 1; }
+}
+@media (min-width: 800px) {
+  .loop-flow { flex-direction: row; flex-wrap: wrap; align-items: center; }
+  .loop-flow .lane { flex: 1 1 6.2rem; }
+  .loop-flow .edge { align-self: center; width: 22px; height: 3px; flex-basis: 22px; margin-left: 0; }
+  .loop-flow .edge::after { left: auto; right: -1px; top: -4px; bottom: auto; border: 5px solid transparent; border-left: 7px solid var(--line); }
+  .loop-flow .edge.is-live::after { border-left-color: var(--copper); border-top-color: transparent; }
+  .loop-flow .edge-back::after { right: auto; left: -1px; border-left-color: transparent; border-right: 7px solid var(--line); }
+  .loop-flow .edge-back.is-live::after { border-right-color: var(--copper); }
+}
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
-  .node, .scene-link, button { transition: none; }
+  .node, .scene-link, button, .packet { transition: none; animation: none; }
 }

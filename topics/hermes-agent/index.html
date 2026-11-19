@@ -61,19 +61,25 @@
         <div class="split diagram">
           <div class="path" data-path="text">
             <h3>只回文本的示意</h3>
-            <ol class="chain">
-              <li>消息</li>
-              <li>模型</li>
-              <li>回答</li>
+            <ol class="flow">
+              <li data-node="text-user">消息</li>
+              <li class="edge" aria-hidden="true"></li>
+              <li data-node="text-model">模型</li>
+              <li class="edge" aria-hidden="true"></li>
+              <li data-node="text-answer">回答</li>
             </ol>
           </div>
           <div class="path" data-path="hermes">
-            <h3>Hermes</h3>
-            <ol class="chain">
+            <h3>Hermes · 箭头是交接方向</h3>
+            <ol class="flow">
               <li data-node="user">消息</li>
+              <li class="edge" data-edge="to-agent" aria-hidden="true"></li>
               <li data-node="agent">AIAgent</li>
+              <li class="edge" data-edge="to-model" aria-hidden="true"></li>
               <li data-node="model">模型</li>
+              <li class="edge" data-edge="to-tool" aria-hidden="true"></li>
               <li data-node="tool">工具</li>
+              <li class="edge edge-back" data-edge="back-model"><span>结果送回</span></li>
               <li data-node="brief">简报</li>
             </ol>
           </div>
@@ -119,7 +125,8 @@
             <div class="nodes">
               <button type="button" class="node" data-kind="control" data-node="tools" data-do="focus">工具分发<small>找到处理器</small></button>
               <button type="button" class="node" data-kind="warn" data-node="local" data-do="focus">本机<small>无容器隔离</small></button>
-              <button type="button" class="node" data-kind="warn" data-node="docker" data-do="focus">容器<small>另一套边界</small></button>
+              <button type="button" class="node" data-kind="warn" data-node="docker" data-do="focus">Docker<small>看有没有挂主机</small></button>
+              <button type="button" class="node" data-kind="warn" data-node="modal" data-do="focus">Modal 一类<small>总是跳过这层</small></button>
               <button type="button" class="node" data-kind="persist" data-node="file" data-do="focus">文件工具<small>单独一支</small></button>
             </div>
           </div>
@@ -135,7 +142,9 @@
         <p class="duty" id="duty">AIAgent 驱动循环、预算和停止。它不自己充当模型。</p>
         <div class="choices">
           <button type="button" data-do="backend" data-value="local" aria-pressed="true">终端：本机</button>
-          <button type="button" data-do="backend" data-value="docker" aria-pressed="false">终端：容器</button>
+          <button type="button" data-do="backend" data-value="docker" aria-pressed="false">Docker：无主机挂载</button>
+          <button type="button" data-do="backend" data-value="docker-mount" aria-pressed="false">Docker：挂了主机路径</button>
+          <button type="button" data-do="backend" data-value="modal" aria-pressed="false">Modal 一类</button>
         </div>
         <ol class="beats"><li>输入抵达</li><li>准备上下文</li><li>模型请求</li><li>工具分发</li><li>后端执行</li><li>保存与回答</li></ol>
         <aside class="ticket"><p class="ticket-kicker">控制</p><h3>输入抵达</h3><ul><li>CLI 或 Gateway</li></ul><p class="ticket-note">入口不同，核心相同。</p></aside>
@@ -154,11 +163,16 @@
           <button type="button" data-do="loop" data-value="error" aria-pressed="false">工具失败</button>
           <button type="button" data-do="loop" data-value="parallel" aria-pressed="false">两个只读</button>
         </div>
-        <div class="lanes diagram" aria-label="五个泳道">
+        <div class="flow loop-flow diagram" aria-label="控制怎么交，数据怎么回来">
           <div class="lane" data-node="entry">入口<b>用户这句话</b></div>
+          <div class="edge" data-edge="to-agent" aria-hidden="true"></div>
           <div class="lane" data-node="agent">AIAgent<b>组包、循环</b></div>
+          <div class="edge" data-edge="to-model" aria-hidden="true"></div>
           <div class="lane" data-node="model">模型<b>文本或请求</b></div>
+          <div class="edge" data-edge="to-tool" aria-hidden="true"></div>
           <div class="lane" data-node="tool">工具<b>运行时执行</b></div>
+          <div class="edge edge-back" data-edge="back-model"><span>送回</span></div>
+          <div class="edge" data-edge="to-db" aria-hidden="true"></div>
           <div class="lane" data-node="db">会话库<b>记下往来</b></div>
         </div>
         <ol class="beats"><li>查会话</li><li>组装输入</li><li>请求模型</li><li>收到 tool_call</li><li>执行读取</li><li>追加结果</li><li>再次请求</li><li>最终回答</li><li>保存</li></ol>
@@ -174,25 +188,30 @@
       <section class="scene" id="boundary" data-scene="boundary" aria-labelledby="boundary-title">
         <h2 id="boundary-title">三套边界，不是一个批准框</h2>
         <p class="takeaway">授权谁、批准什么、代码在哪跑，是三套边界。</p>
-        <p class="host-note">本机执行没有容器隔离。下面若选本机，批准流程只代表显式的 local + manual，不是每个工具的全局默认。</p>
-        <div class="bounds diagram">
+        <p class="host-note">本机执行没有容器隔离。Docker 只有在没有主机路径挂载时才跳过危险命令检查；挂了主机路径就走普通检查。下面的手动批准只代表显式的 manual，不是每个工具的全局默认。</p>
+        <div class="flow bounds diagram">
           <article class="bound" data-node="who"><h3>谁能发来</h3><p>允许进入的人或会话。没通过，就不会跑循环。</p></article>
-          <article class="bound" data-node="where"><h3>在哪里执行</h3><p>本机或容器。两处的命令检查不一样。</p></article>
+          <div class="edge" data-edge="to-where" aria-hidden="true"></div>
+          <article class="bound" data-node="where"><h3>在哪里执行</h3><p>本机、隔离的 Docker、挂了主机路径的 Docker，或 Modal 一类。检查不是同一支。</p></article>
+          <div class="edge" data-edge="to-what" aria-hidden="true"></div>
           <article class="bound" data-node="what"><h3>这一步做什么</h3><p>读取、命令、写文件，各自有自己的门。</p></article>
         </div>
         <div class="choices">
           <button type="button" data-do="backend" data-value="local" aria-pressed="true">本机 + 手动</button>
-          <button type="button" data-do="backend" data-value="docker" aria-pressed="false">改看容器</button>
+          <button type="button" data-do="backend" data-value="docker" aria-pressed="false">Docker：无主机挂载</button>
+          <button type="button" data-do="backend" data-value="docker-mount" aria-pressed="false">Docker：挂了主机路径</button>
+          <button type="button" data-do="backend" data-value="modal" aria-pressed="false">Modal 一类</button>
           <button type="button" data-do="decision" data-value="deny">拒绝</button>
           <button type="button" data-do="decision" data-value="once">批准一次</button>
           <button type="button" data-do="file-root" aria-pressed="false">只看文件写入范围</button>
         </div>
         <ol class="beats"><li>谁能发来</li><li>命令请求</li><li>匹配危险规则</li><li>等待批准</li><li>仍在等待</li></ol>
         <aside class="ticket"><p class="ticket-kicker">边界</p><h3>谁能发来</h3><ul><li>模拟：个人会话已在允许范围</li></ul><p class="ticket-note">身份授权是第一套边界。</p></aside>
-        <p class="sources"><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/website/docs/user-guide/security.md#L650-L661">固定版本安全表</a> · <a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/tools/approval.py#L1282-L1458">检查代码</a></p>
+        <p class="sources"><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/tools/approval.py#L1282-L1296">何时跳过</a> · <a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/tools/approval.py#L1402-L1413">提前返回</a> · <a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/tools/terminal_tool.py#L156-L172">谁传入挂载标志</a></p>
         <details>
           <summary>深入</summary>
-          <p>危险命令检查的顺序，在这份代码里大致是：用户自己的拒绝规则和硬性底线先挡，容器后端可以跳过其后的危险命令提示，YOLO 或关闭审批也绕不过硬性底线。智能模式可以由辅助模型放过它认为低风险的命令。定时任务里的危险命令默认拒绝，这个默认可以改。</p>
+          <p>下面说的是终端命令的 <code>check_all_command_guards</code>。<code>_run_approval_guards</code> 把 <code>_docker_has_host_access(config)</code> 传进去。Docker 只在这个标志为假时跳过：没有把工作目录挂进容器，卷规格也不像主机路径。标志为真就走普通检查。modal、daytona、vercel_sandbox 总是跳过这一层，那个标志加不回来。</p>
+          <p>跳过的那一支在调用硬性底线之前就返回，返回前只再看用户自己的拒绝规则。所以不能说底线永远先跑，也不能说隔离容器仍保留底线。走进普通检查之后，底线才排在 YOLO 前面。智能模式可以由辅助模型放过它认为低风险的命令。定时任务里的危险命令默认拒绝，这个默认可以改。<code>execute_code</code> 的隔离返回是直接放行，不看那份拒绝规则。传入容器的环境变量仍可能被读到。安全文档的总表把 Docker 写成一律跳过，比这份代码粗。</p>
           <p>文件写入范围只限制 <code>write_file</code> 和 <code>patch</code>。终端、插件和 MCP 不因此被同一条线围住。页面不展示可复制的破坏性命令，也不真正删除任何东西。</p>
         </details>
       </section>
@@ -226,17 +245,24 @@
       <section class="scene" id="compress" data-scene="compress" aria-labelledby="compress-title">
         <h2 id="compress-title">对话长了，这一轮仍然只能看见一部分</h2>
         <p class="takeaway">磁盘可以保存很多历史，模型这一轮只看到选中的部分。</p>
-        <div class="diagram">
+        <div class="diagram meters">
+          <p class="meter-caption">下面的比例是模拟，用来看变化，不是实测。</p>
           <article class="life" data-node="input">
-            <header><h3>这一轮输入</h3><b>有限</b></header>
-            <div class="meter" aria-hidden="true"><span></span></div>
-            <p>快满时才压缩。主图不写死比例。</p>
+            <header><h3>本轮输入</h3><b data-readout="input">模拟 92</b></header>
+            <div class="bar" role="img" aria-label="本轮输入：旧输出 78，近期 14">
+              <i data-part="old" style="width:78%"></i>
+              <i data-part="summary" style="width:0%"></i>
+              <i data-part="recent" style="width:14%"></i>
+            </div>
           </article>
+          <div class="edge edge-down" data-edge="to-archive" aria-hidden="true"></div>
           <article class="life archive" data-node="archive">
-            <header><h3>会话库</h3><b>原文还在</b></header>
-            <div class="meter full" aria-hidden="true"><span></span></div>
-            <p>被换掉的段落改成可搜索，不画成销毁。</p>
+            <header><h3>会话库</h3><b data-readout="archive">模拟 100，原文还在</b></header>
+            <div class="bar" role="img" aria-label="会话库保持 100">
+              <i data-part="archive" style="width:100%"></i>
+            </div>
           </article>
+          <p class="meter-legend"><span><i class="swatch data"></i>旧输出</span><span><i class="swatch external"></i>摘要</span><span><i class="swatch control"></i>近期</span><span><i class="swatch persist"></i>库里的原文</span></p>
         </div>
         <div class="choices">
           <button type="button" data-do="compress" data-value="kept" aria-pressed="true">摘要留下要点</button>
@@ -305,7 +331,9 @@
             <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/tools/skills_tool.py#L88-L89">技能目录</a></li>
             <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/tools/todo_tool.py#L229-L287">任务清单的现名和旧名</a></li>
             <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/agent/file_safety.py#L330-L411">文件写入范围</a></li>
-            <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/tools/approval.py#L1310-L1323">硬性底线先于 YOLO</a></li>
+            <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/tools/approval.py#L1408-L1413">容器快路径在底线之前返回</a></li>
+            <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/tools/terminal_tool.py#L1190-L1196">终端把挂载标志传进检查</a></li>
+            <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/tools/approval.py#L1310-L1323">走进普通检查之后，底线先于 YOLO</a></li>
             <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/tools/approval_context.py#L369-L381">定时任务默认拒绝危险命令</a></li>
             <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/hermes_state.py#L184">会话库路径</a></li>
             <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/hermes_state.py#L483">FTS5</a></li>
