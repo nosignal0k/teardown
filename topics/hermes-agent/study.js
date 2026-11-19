@@ -107,8 +107,8 @@ function purposeFrames() {
     frame({ id: "need", title: "需要文件", actor: "运行时", hot: ["agent"], edge: "to-model", token: "任务", kind: "control", lines: ["回答需要两份表", "上下文里还没有数字"], askNote: "只回文本的示意会让模型直接作答。", runNote: "Hermes 准备把这句话放进带工具的循环。" }),
     frame({ id: "request", title: "请求读取", actor: "模型", hot: ["model"], edge: "to-tool", token: "tool_call", kind: "data", lines: ["tool_call", "read_file · yesterday.csv"], askNote: "这一步是模型在请求工具。", runNote: "运行时尚未碰文件。模型不执行操作系统命令。" }),
     frame({ id: "data", title: "获得数据", actor: "运行时", hot: ["tool"], edge: "back-model", token: "订单 100", kind: "data", lines: ["yesterday.csv", "订单 100 · 收入 10000"], askNote: "模型只提出了读取。", runNote: "这一步是运行时实际读取，并把结果送回。", executed: true }),
-    frame({ id: "compute", title: "再次请求", actor: "模型", hot: ["model"], edge: "back-model", token: "工具结果", kind: "data", lines: ["输入含上一则工具结果", "教学简化：今日文件走同一种往返"], askNote: "模型根据工具结果继续请求或作答。", runNote: "运行时把结果放进下一次模型调用，自己不算成模型。" }),
-    frame({ id: "brief", title: "生成简报", actor: "模型", hot: ["brief"], edge: "to-brief", token: "简报", kind: "data", lines: brief, askNote: "最终文本由模型返回。", runNote: "运行时负责收下文本并准备保存。没有改模型权重。" }),
+    frame({ id: "compute", title: "再次请求", actor: "模型", hot: ["model-return"], edge: "back-model", token: "工具结果", kind: "data", lines: ["结果先回到模型", "教学简化：今日文件走同一种往返"], askNote: "模型看见工具结果之后才写简报。", runNote: "运行时把结果放进下一次模型调用，自己不算成模型。" }),
+    frame({ id: "brief", title: "生成简报", actor: "模型", hot: ["brief"], edge: "to-brief", token: "简报", kind: "data", lines: brief, askNote: "最终文本由模型返回，不是工具直接交出。", runNote: "运行时负责收下文本并准备保存。没有改模型权重。" }),
   ];
 }
 
@@ -143,7 +143,7 @@ function loopFrames(study) {
       ...head,
       frame({ id: "call", title: "收到 tool_call", actor: "模型", hot: ["model"], edge: "to-tool", token: "tool_call", kind: "data", lines: ["read_file", "yesterday.csv"], askNote: "模型请求读取。", runNote: "运行时还没读成。" }),
       frame({ id: "fail", title: "执行失败", actor: "运行时", hot: ["tool"], edge: "to-tool", token: "error", kind: "warn", lines: ["error", "文件不可读（预设）"], askNote: "失败不是模型的内心活动。", runNote: "处理器异常被包成错误结果。", executed: true, healed: false }),
-      frame({ id: "back", title: "错误回到模型", actor: "运行时", hot: ["model"], edge: "back-model", token: "错误结果", kind: "data", lines: ["role: tool", "关联原来的 tool_call id"], askNote: "模型只是又收到一则消息。", runNote: "运行时把错误送回，不保证它能修好。" }),
+      frame({ id: "back", title: "错误回到模型", actor: "运行时", hot: ["model-return"], edge: "back-model", token: "错误结果", kind: "data", lines: ["role: tool", "关联原来的 tool_call id"], askNote: "模型只是又收到一则消息。", runNote: "运行时把错误送回，不保证它能修好。" }),
       frame({ id: "stop", title: "停止", actor: "运行时", hot: ["agent"], kind: "warn", lines: ["预设：停止", "不是必然自愈"], askNote: "模型可以再试，也可以停。", runNote: "这条演示选择停止。", healed: false }),
     ];
   }
@@ -153,8 +153,8 @@ function loopFrames(study) {
       frame({ id: "batch", title: "两个只读请求", actor: "模型", hot: ["model"], kind: "data", lines: ["read_file · yesterday.csv", "read_file · today.csv"], askNote: "模型一次发出两个读取请求。", runNote: "尚未执行。不演示两个写入。" }),
       frame({ id: "parallel", title: "并发读取", actor: "运行时", hot: ["tool"], kind: "data", lines: ["两个只读可以同时跑", "写入不据此当成互不冲突"], askNote: "并发是运行时的调度。", runNote: "交互类工具会限制并发。", executed: true }),
       frame({ id: "ordered", title: "按调用顺序收集", actor: "运行时", hot: ["tool", "db"], kind: "data", lines: ["先昨日，后今日", "结果按原顺序放回"], askNote: "模型稍后按这个顺序看见结果。", runNote: "收集顺序由运行时排列。" }),
-      frame({ id: "again", title: "再次请求", actor: "运行时", hot: ["model"], kind: "data", lines: ["两次结果都在历史里"], askNote: "下一次模型调用看见它们。", runNote: "运行时再次发出请求。" }),
-      frame({ id: "answer", title: "最终回答", actor: "模型", hot: ["model"], kind: "data", lines: briefingLines(), askNote: "模型返回简报文本。", runNote: "没有改模型权重。", healed: false }),
+      frame({ id: "again", title: "再次请求", actor: "运行时", hot: ["model-return"], edge: "back-model", token: "两个结果", kind: "data", lines: ["两次结果都在历史里"], askNote: "下一次模型调用看见它们。", runNote: "运行时再次发出请求。" }),
+      frame({ id: "answer", title: "最终回答", actor: "模型", hot: ["model-return"], edge: "to-db", token: "简报", kind: "data", lines: briefingLines(), askNote: "模型返回简报文本。", runNote: "没有改模型权重。", healed: false }),
       frame({ id: "save", title: "保存", actor: "运行时", hot: ["db"], kind: "persist", lines: ["工具调用和结果写入会话"], askNote: "保存发生在运行时。", runNote: "会话库记下这一轮。" }),
     ];
   }
@@ -163,8 +163,8 @@ function loopFrames(study) {
     frame({ id: "call", title: "收到 tool_call", actor: "模型", hot: ["model"], edge: "to-tool", token: "tool_call", kind: "data", lines: ["read_file", "yesterday.csv"], askNote: "模型决定请求这个工具。", runNote: "运行时只是收到请求。" }),
     frame({ id: "run", title: "执行读取", actor: "运行时", hot: ["tool"], edge: "to-tool", token: "订单 100", kind: "data", lines: ["订单 100", "收入 10000"], askNote: "模型没有碰文件。", runNote: "运行时执行读取。", executed: true }),
     frame({ id: "append", title: "追加结果", actor: "运行时", hot: ["db"], edge: "to-db", token: "tool 结果", kind: "persist", lines: ["role: tool", "对上 tool_call id"], askNote: "结果成为历史的一则。", runNote: "工具请求在执行前已经写入会话。这一步再追加结果。" }),
-    frame({ id: "again", title: "再次请求", actor: "运行时", hot: ["model"], edge: "back-model", token: "工具结果", kind: "data", lines: ["历史里已经有工具结果", "今日文件用同一种往返"], askNote: "这是另一次模型调用。", runNote: "教学简化：第二次读取不再展开。" }),
-    frame({ id: "answer", title: "最终回答", actor: "模型", hot: ["model"], kind: "data", lines: briefingLines(), askNote: "模型返回文本，不是工具请求。", runNote: "运行时准备结束这一轮。" }),
+    frame({ id: "again", title: "再次请求", actor: "运行时", hot: ["model-return"], edge: "back-model", token: "工具结果", kind: "data", lines: ["结果先回到模型", "今日文件用同一种往返"], askNote: "这是另一次模型调用。", runNote: "教学简化：第二次读取不再展开。" }),
+    frame({ id: "answer", title: "最终回答", actor: "模型", hot: ["model-return"], edge: "to-db", token: "简报", kind: "data", lines: briefingLines(), askNote: "模型返回文本，不是工具直接交出。", runNote: "运行时准备结束这一轮。" }),
     frame({ id: "save", title: "保存", actor: "运行时", hot: ["db"], kind: "persist", lines: ["简报写入会话库"], askNote: "用户终于看到简报。", runNote: "会话在工具执行前后都会落盘。这里只标出这一轮结束时的保存。" }),
   ];
 }

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFileSync, spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -10,7 +10,17 @@ import { repoRoot } from "../src/site.ts";
 
 test("hermes page controls, backend switch, accordion, and narrow layout", async (t) => {
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "teardown-hermes-"));
-  t.after(() => fs.rmSync(outDir, { recursive: true, force: true }));
+  t.after(() => {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      try {
+        fs.rmSync(outDir, { recursive: true, force: true });
+        return;
+      } catch (error) {
+        if (attempt === 7) throw error;
+        execFileSync("sleep", ["0.1"]);
+      }
+    }
+  });
   const built = buildSite({
     root: repoRoot,
     topicsDir: path.join(repoRoot, "topics"),
@@ -86,17 +96,55 @@ test("hermes page controls, backend switch, accordion, and narrow layout", async
   assert.match(archive, /100/);
   assert.notEqual(before, after);
 
+  await click(socket, page, "a[data-scene-link='purpose']");
+  for (let step = 0; step < 3; step += 1) await click(socket, page, "[data-do='next']");
+  const order = await text(socket, page, "document.querySelector('#purpose [data-path=hermes] .flow').innerText");
+  assert.match(order, /工具[\s\S]*结果回到模型[\s\S]*模型再看结果[\s\S]*简报/);
+  await send(socket, "Emulation.setDeviceMetricsOverride", {
+    width: 1100, height: 900, deviceScaleFactor: 1, mobile: false,
+  }, page);
+  assert.equal(await text(socket, page, GEOMETRY), "ok");
+
   await send(socket, "Emulation.setDeviceMetricsOverride", {
     width: 390,
     height: 844,
     deviceScaleFactor: 1,
     mobile: true,
   }, page);
+  assert.equal(await text(socket, page, GEOMETRY), "ok");
+  await click(socket, page, "a[data-scene-link='loop']");
+  assert.equal(await text(socket, page, GEOMETRY), "ok");
+  await click(socket, page, "a[data-scene-link='boundary']");
+  assert.equal(await text(socket, page, GEOMETRY), "ok");
   const overflow = await text(socket, page, "String(document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)");
   assert.equal(overflow, "false");
-  const visible = await text(socket, page, "document.querySelector('.scene:not([hidden])').id");
-  assert.equal(visible, "compress");
 });
+
+const GEOMETRY = `(() => {
+  const problems = [];
+  const scene = document.querySelector(".scene:not([hidden])");
+  if (!scene) return "no scene";
+  for (const flow of scene.querySelectorAll(".flow")) {
+    const box = flow.getBoundingClientRect();
+    const names = [...flow.querySelectorAll(".node-name")];
+    const marks = [...flow.querySelectorAll(".edge-label, .packet")];
+    for (const mark of marks) {
+      const rect = mark.getBoundingClientRect();
+      if (rect.width < 1 || rect.height < 1) continue;
+      const label = (mark.textContent || "").trim();
+      if (rect.left < box.left - 1 || rect.right > box.right + 1 || rect.top < box.top - 1 || rect.bottom > box.bottom + 1) {
+        problems.push("outside:" + label);
+      }
+      if (rect.height > 36) problems.push("wrapped:" + label);
+      for (const name of names) {
+        const node = name.getBoundingClientRect();
+        const overlaps = rect.left < node.right - 1 && rect.right > node.left + 1 && rect.top < node.bottom - 1 && rect.bottom > node.top + 1;
+        if (overlaps) problems.push("overlap:" + label + "/" + (name.textContent || "").trim());
+      }
+    }
+  }
+  return problems.join("|") || "ok";
+})()`;
 
 function findChrome(): string {
   const candidates = [

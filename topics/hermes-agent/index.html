@@ -62,25 +62,27 @@
           <div class="path" data-path="text">
             <h3>只回文本的示意</h3>
             <ol class="flow">
-              <li data-node="text-user">消息</li>
-              <li class="edge" aria-hidden="true"></li>
-              <li data-node="text-model">模型</li>
-              <li class="edge" aria-hidden="true"></li>
-              <li data-node="text-answer">回答</li>
+              <li data-node="text-user"><span class="node-name">消息</span></li>
+              <li class="edge" aria-hidden="true"><span class="edge-shaft"></span></li>
+              <li data-node="text-model"><span class="node-name">模型</span></li>
+              <li class="edge" aria-hidden="true"><span class="edge-shaft"></span></li>
+              <li data-node="text-answer"><span class="node-name">回答</span></li>
             </ol>
           </div>
           <div class="path" data-path="hermes">
             <h3>Hermes · 箭头是交接方向</h3>
             <ol class="flow">
-              <li data-node="user">消息</li>
-              <li class="edge" data-edge="to-agent" aria-hidden="true"></li>
-              <li data-node="agent">AIAgent</li>
-              <li class="edge" data-edge="to-model" aria-hidden="true"></li>
-              <li data-node="model">模型</li>
-              <li class="edge" data-edge="to-tool" aria-hidden="true"></li>
-              <li data-node="tool">工具</li>
-              <li class="edge edge-back" data-edge="back-model"><span>结果送回</span></li>
-              <li data-node="brief">简报</li>
+              <li data-node="user"><span class="node-name">消息</span></li>
+              <li class="edge" data-edge="to-agent" aria-hidden="true"><span class="edge-shaft"></span></li>
+              <li data-node="agent"><span class="node-name">AIAgent</span></li>
+              <li class="edge" data-edge="to-model" aria-hidden="true"><span class="edge-shaft"></span></li>
+              <li data-node="model"><span class="node-name">模型</span></li>
+              <li class="edge" data-edge="to-tool"><span class="edge-shaft"></span><span class="edge-label">请求工具</span></li>
+              <li data-node="tool"><span class="node-name">工具</span></li>
+              <li class="edge edge-back" data-edge="back-model"><span class="edge-shaft"></span><span class="edge-label">结果回到模型</span></li>
+              <li data-node="model-return"><span class="node-name">模型再看结果</span></li>
+              <li class="edge" data-edge="to-brief"><span class="edge-shaft"></span><span class="edge-label">返回文本</span></li>
+              <li data-node="brief"><span class="node-name">简报</span></li>
             </ol>
           </div>
         </div>
@@ -163,17 +165,18 @@
           <button type="button" data-do="loop" data-value="error" aria-pressed="false">工具失败</button>
           <button type="button" data-do="loop" data-value="parallel" aria-pressed="false">两个只读</button>
         </div>
-        <div class="flow loop-flow diagram" aria-label="控制怎么交，数据怎么回来">
-          <div class="lane" data-node="entry">入口<b>用户这句话</b></div>
-          <div class="edge" data-edge="to-agent" aria-hidden="true"></div>
-          <div class="lane" data-node="agent">AIAgent<b>组包、循环</b></div>
-          <div class="edge" data-edge="to-model" aria-hidden="true"></div>
-          <div class="lane" data-node="model">模型<b>文本或请求</b></div>
-          <div class="edge" data-edge="to-tool" aria-hidden="true"></div>
-          <div class="lane" data-node="tool">工具<b>运行时执行</b></div>
-          <div class="edge edge-back" data-edge="back-model"><span>送回</span></div>
-          <div class="edge" data-edge="to-db" aria-hidden="true"></div>
-          <div class="lane" data-node="db">会话库<b>记下往来</b></div>
+        <div class="flow diagram" aria-label="控制怎么交，结果先回到模型">
+          <div class="lane" data-node="entry"><span class="node-name">入口</span></div>
+          <div class="edge" data-edge="to-agent" aria-hidden="true"><span class="edge-shaft"></span></div>
+          <div class="lane" data-node="agent"><span class="node-name">AIAgent</span></div>
+          <div class="edge" data-edge="to-model" aria-hidden="true"><span class="edge-shaft"></span></div>
+          <div class="lane" data-node="model"><span class="node-name">模型</span></div>
+          <div class="edge" data-edge="to-tool"><span class="edge-shaft"></span><span class="edge-label">请求工具</span></div>
+          <div class="lane" data-node="tool"><span class="node-name">工具</span></div>
+          <div class="edge edge-back" data-edge="back-model"><span class="edge-shaft"></span><span class="edge-label">结果回到模型</span></div>
+          <div class="lane" data-node="model-return"><span class="node-name">模型再看结果</span></div>
+          <div class="edge" data-edge="to-db"><span class="edge-shaft"></span><span class="edge-label">写入会话</span></div>
+          <div class="lane" data-node="db"><span class="node-name">会话库</span></div>
         </div>
         <ol class="beats"><li>查会话</li><li>组装输入</li><li>请求模型</li><li>收到 tool_call</li><li>执行读取</li><li>追加结果</li><li>再次请求</li><li>最终回答</li><li>保存</li></ol>
         <aside class="ticket"><p class="ticket-kicker">数据</p><h3>查会话</h3><ul><li>按会话取出历史</li></ul><p class="ticket-note">一次用户消息可以对应多次模型请求。</p></aside>
@@ -191,9 +194,9 @@
         <p class="host-note">本机执行没有容器隔离。Docker 只有在没有主机路径挂载时才跳过危险命令检查；挂了主机路径就走普通检查。下面的手动批准只代表显式的 manual，不是每个工具的全局默认。</p>
         <div class="flow bounds diagram">
           <article class="bound" data-node="who"><h3>谁能发来</h3><p>允许进入的人或会话。没通过，就不会跑循环。</p></article>
-          <div class="edge" data-edge="to-where" aria-hidden="true"></div>
+          <div class="edge" data-edge="to-where" aria-hidden="true"><span class="edge-shaft"></span></div>
           <article class="bound" data-node="where"><h3>在哪里执行</h3><p>本机、隔离的 Docker、挂了主机路径的 Docker，或 Modal 一类。检查不是同一支。</p></article>
-          <div class="edge" data-edge="to-what" aria-hidden="true"></div>
+          <div class="edge" data-edge="to-what" aria-hidden="true"><span class="edge-shaft"></span></div>
           <article class="bound" data-node="what"><h3>这一步做什么</h3><p>读取、命令、写文件，各自有自己的门。</p></article>
         </div>
         <div class="choices">
@@ -255,7 +258,7 @@
               <i data-part="recent" style="width:14%"></i>
             </div>
           </article>
-          <div class="edge edge-down" data-edge="to-archive" aria-hidden="true"></div>
+          <div class="edge" data-edge="to-archive" aria-hidden="true"><span class="edge-shaft"></span></div>
           <article class="life archive" data-node="archive">
             <header><h3>会话库</h3><b data-readout="archive">模拟 100，原文还在</b></header>
             <div class="bar" role="img" aria-label="会话库保持 100">
