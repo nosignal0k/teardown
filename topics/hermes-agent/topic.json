@@ -1,0 +1,6 @@
+{
+  "title": "Hermes Agent",
+  "summary": "模型提出工具请求，运行时执行，并把会话、记忆和技能分开保存。",
+  "category": "软件",
+  "tags": ["代理", "工具循环", "Hermes"]
+}

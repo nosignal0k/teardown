@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -12,7 +13,15 @@ export function tempSite(t: TestContext): SitePaths {
   const topicsDir = path.join(root, "topics");
   fs.mkdirSync(topicsDir);
   t.after(() => {
-    fs.rmSync(root, { recursive: true, force: true });
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      try {
+        fs.rmSync(root, { recursive: true, force: true });
+        return;
+      } catch (error) {
+        if (attempt === 7) throw error;
+        execFileSync("sleep", ["0.1"]);
+      }
+    }
   });
   return {
     root,

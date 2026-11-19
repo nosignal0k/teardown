@@ -30,23 +30,26 @@ test("catalog escapes text and points topic links at the base path", () => {
   assert.match(html, /a&lt;b&gt;&amp;&quot;c/);
 });
 
-test("empty production catalog has an intentional empty state and base-path assets", (t) => {
+test("production catalog publishes topic cards and base-path assets", (t) => {
   const paths = resolveSitePaths({});
-  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "teardown-empty-"));
+  const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "teardown-site-"));
   t.after(() => fs.rmSync(outDir, { recursive: true, force: true }));
   const result = buildSite({ ...paths, outDir });
   assert.equal(result.ok, true);
   const index = fs.readFileSync(path.join(outDir, "index.html"), "utf8");
   const css = fs.readFileSync(path.join(outDir, "platform.css"), "utf8");
   const notFound = fs.readFileSync(path.join(outDir, "404.html"), "utf8");
-  assert.match(index, /还没有主题/);
+  const topic = fs.readFileSync(path.join(outDir, "topics", "hermes-agent", "index.html"), "utf8");
+  assert.match(index, /href="\/teardown\/topics\/hermes-agent\/"/);
+  assert.match(index, /Hermes Agent/);
+  assert.match(index, /id="empty"[^>]*hidden/);
   assert.match(index, /href="\/teardown\/platform\.css"/);
   assert.match(css, /prefers-reduced-motion/);
-  assert.doesNotMatch(index, /href="\/teardown\/topics\//);
   assert.match(notFound, /href="\/teardown\/"/);
+  assert.match(topic, /href="\/teardown\/"/);
   assert.equal(fs.existsSync(path.join(outDir, ".nojekyll")), true);
-  assert.equal(fs.existsSync(path.join(outDir, "topics")), false);
-  assert.doesNotMatch(index, /\/home\/|cursoragent|Co-authored-by/);
+  assert.equal(fs.existsSync(path.join(outDir, "topics", "hermes-agent", "topic.json")), false);
+  assert.doesNotMatch(index + topic, /\/home\/|cursoragent|Co-authored-by/);
 });
 
 test("invalid topics are not published and unsafe output directories are refused", (t) => {
