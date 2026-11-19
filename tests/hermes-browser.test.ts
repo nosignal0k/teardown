@@ -104,6 +104,7 @@ test("hermes page controls, backend switch, accordion, and narrow layout", async
     width: 1100, height: 900, deviceScaleFactor: 1, mobile: false,
   }, page);
   assert.equal(await text(socket, page, GEOMETRY), "ok");
+  assert.equal(await text(socket, page, ARROWS), "ok");
 
   await send(socket, "Emulation.setDeviceMetricsOverride", {
     width: 390,
@@ -112,6 +113,7 @@ test("hermes page controls, backend switch, accordion, and narrow layout", async
     mobile: true,
   }, page);
   assert.equal(await text(socket, page, GEOMETRY), "ok");
+  assert.equal(await text(socket, page, ARROWS), "ok");
   await click(socket, page, "a[data-scene-link='loop']");
   assert.equal(await text(socket, page, GEOMETRY), "ok");
   await click(socket, page, "a[data-scene-link='boundary']");
@@ -142,6 +144,21 @@ const GEOMETRY = `(() => {
         if (overlaps) problems.push("overlap:" + label + "/" + (name.textContent || "").trim());
       }
     }
+  }
+  return problems.join("|") || "ok";
+})()`;
+
+const ARROWS = `(() => {
+  const problems = [];
+  const shafts = [...document.querySelectorAll(".edge-shaft")];
+  if (shafts.length < 8) problems.push("few-shafts");
+  const clear = (color) => !color || color === "transparent" || color === "rgba(0, 0, 0, 0)";
+  for (const shaft of shafts) {
+    const style = getComputedStyle(shaft, "::after");
+    const top = Number.parseFloat(style.borderTopWidth);
+    const bottom = Number.parseFloat(style.borderBottomWidth);
+    const down = top > bottom && !clear(style.borderTopColor) && clear(style.borderBottomColor);
+    if (!down) problems.push("not-down");
   }
   return problems.join("|") || "ok";
 })()`;

@@ -269,8 +269,6 @@ button[aria-pressed="true"]:focus-visible, .scene-link.is-current:focus-visible 
   border: 5px solid transparent;
   border-top: 7px solid currentColor;
 }
-.edge-back .edge-shaft::before { top: 8px; }
-.edge-back .edge-shaft::after { top: 0; border-top-color: transparent; border-bottom: 7px solid currentColor; }
 .edge.is-live { color: var(--copper); }
 .edge-label { white-space: nowrap; line-height: 1.35; font-size: 0.95rem; }
 .packet {
