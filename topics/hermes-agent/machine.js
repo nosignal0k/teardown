@@ -19,7 +19,7 @@ const WIDE = {
     tools: { x: 214, y: 268, w: 206, h: 78 },
     file: { x: 214, y: 362, w: 206, h: 104 },
     code: { x: 214, y: 494, w: 206, h: 56 },
-    exec: { x: 438, y: 268, w: 376, h: 282 },
+    exec: { x: 438, y: 268, w: 376, h: 250 },
     session: { x: 214, y: 564, w: 192, h: 156 },
     memory: { x: 420, y: 564, w: 200, h: 156 },
     skills: { x: 634, y: 564, w: 180, h: 156 },
@@ -40,7 +40,7 @@ const NARROW = {
     tools: { x: 20, y: 444, w: 164, h: 58 },
     file: { x: 20, y: 524, w: 164, h: 78 },
     code: { x: 20, y: 624, w: 164, h: 48 },
-    exec: { x: 196, y: 444, w: 174, h: 228 },
+    exec: { x: 196, y: 444, w: 174, h: 200 },
     session: { x: 20, y: 688, w: 112, h: 180 },
     memory: { x: 140, y: 688, w: 114, h: 180 },
     skills: { x: 262, y: 688, w: 108, h: 180 },
@@ -95,6 +95,8 @@ function railsFor(regions, mode) {
       "to-file": [bottom(box.tools), top(box.file)],
       "file-back": [top(box.file), { x: midX(box.file), y: box.window.y + box.window.h }, { x: box.window.x + 28, y: box.window.y + box.window.h }],
       "to-session": [bottom(box.exec), { x: midX(box.session), y: box.exec.y + box.exec.h }, top(box.session)],
+      "to-memory": [bottom(box.exec), { x: midX(box.memory), y: box.exec.y + box.exec.h + 16 }, top(box.memory)],
+      "to-skills": [{ x: midX(box.exec), y: box.exec.y + box.exec.h }, { x: midX(box.skills), y: box.exec.y + box.exec.h + 16 }, top(box.skills)],
       "to-code": [bottom(box.file), top(box.code)],
       deliver: [left(box.window), { x: box.gateway.x + box.gateway.w / 2, y: midY(box.window) }, bottom(box.gateway)],
       cron: [bottom(box.clock), { x: midX(box.clock), y: box.fresh.y }, top(box.fresh)],
@@ -110,6 +112,8 @@ function railsFor(regions, mode) {
     "to-file": [bottom(box.tools), top(box.file)],
     "file-back": [left(box.file), { x: box.housing.x + 12, y: midY(box.file) }, { x: box.housing.x + 12, y: box.agent.y + box.agent.h - 28 }, { x: box.agent.x, y: box.agent.y + box.agent.h - 28 }],
     "to-session": [bottom(box.file), { x: midX(box.session), y: box.file.y + box.file.h }, top(box.session)],
+    "to-memory": [{ x: midX(box.exec), y: box.exec.y + box.exec.h }, { x: midX(box.memory), y: box.exec.y + box.exec.h + 14 }, top(box.memory)],
+    "to-skills": [{ x: midX(box.exec), y: box.exec.y + box.exec.h }, { x: midX(box.skills), y: box.exec.y + box.exec.h + 14 }, top(box.skills)],
     "to-code": [bottom(box.file), { x: midX(box.code), y: box.file.y + box.file.h }, top(box.code)],
     deliver: [left(box.agent), { x: box.gateway.x + box.gateway.w + 18, y: box.agent.y + 36 }, { x: box.gateway.x + box.gateway.w + 18, y: midY(box.gateway) }, right(box.gateway)],
     cron: [right(box.clock), { x: box.fresh.x - 12, y: midY(box.clock) }, { x: box.fresh.x - 12, y: box.fresh.y + box.fresh.h }, bottom(box.fresh)],
@@ -140,6 +144,8 @@ export const DIRECTIONS = {
     "to-file": { dy: 1 },
     "file-back": { dy: -1 },
     "to-session": { dy: 1 },
+    "to-memory": { dy: 1 },
+    "to-skills": { dy: 1 },
     "to-code": { dy: 1 },
     deliver: { dx: -1 },
     cron: { dx: 1 },
@@ -154,6 +160,8 @@ export const DIRECTIONS = {
     "to-file": { dy: 1 },
     "file-back": { dy: -1 },
     "to-session": { dy: 1 },
+    "to-memory": { dy: 1 },
+    "to-skills": { dy: 1 },
     "to-code": { dy: 1 },
     deliver: { dy: -1 },
     cron: { dy: 1 },
@@ -170,6 +178,8 @@ const RAIL_KIND = {
   "to-file": "data",
   "file-back": "data",
   "to-session": "persist",
+  "to-memory": "persist",
+  "to-skills": "persist",
   "to-code": "warn",
   deliver: "persist",
   cron: "control",
@@ -273,33 +283,44 @@ function execProfile(backend) {
   };
 }
 
-function placeGates(exec, profile, mode) {
-  const showDetail = profile.detail;
-  const lineH = mode === "narrow" ? 13 : 15;
-  const lastBaseline = showDetail ? 52 + (profile.lines.length - 1) * lineH : 36;
-  const topY = exec.y + lastBaseline + 12;
-  const gates = profile.gates;
-  const innerW = exec.w - 16;
-  if (mode === "narrow" || profile.variant === "docker" || profile.variant === "modal") {
-    const gap = 5;
-    const avail = exec.y + exec.h - topY - 8;
-    const gateH = Math.min(28, (avail - gap * (gates.length - 1)) / gates.length);
-    return gates.map((gate, index) => ({
+function placeGates(exec, profile) {
+  const on = profile.gates.filter((gate) => gate.onPath);
+  const off = profile.gates.filter((gate) => !gate.onPath);
+  const topY = exec.y + 50;
+  const avail = exec.h - 62;
+  if (off.length === 0) {
+    const gap = 8;
+    const gateW = (exec.w - 24 - gap * (on.length - 1)) / on.length;
+    const gateH = Math.min(46, avail);
+    return on.map((gate, index) => ({
       ...gate,
-      x: exec.x + 8,
-      y: topY + index * (gateH + gap),
-      w: innerW,
+      x: exec.x + 12 + index * (gateW + gap),
+      y: topY,
+      w: gateW,
       h: gateH,
     }));
   }
-  const gateW = (innerW - 8 * (gates.length - 1)) / gates.length;
-  return gates.map((gate, index) => ({
-    ...gate,
-    x: exec.x + 8 + index * (gateW + 8),
-    y: topY,
-    w: gateW,
-    h: Math.min(44, exec.y + exec.h - topY - 10),
-  }));
+  const gap = 10;
+  const colW = (exec.w - 24 - gap) / 2;
+  const onH = Math.min(46, avail);
+  const offGap = 8;
+  const offH = Math.min(40, (avail - offGap * (off.length - 1)) / off.length);
+  return [
+    ...on.map((gate, index) => ({
+      ...gate,
+      x: exec.x + 12,
+      y: topY + index * (onH + 8),
+      w: colW,
+      h: onH,
+    })),
+    ...off.map((gate, index) => ({
+      ...gate,
+      x: exec.x + 12 + colW + gap,
+      y: topY + index * (offH + offGap),
+      w: colW,
+      h: offH,
+    })),
+  ];
 }
 
 function memoryPlates(memory) {
@@ -349,11 +370,6 @@ function buildLabels(regions, spec, mode, plates, gates) {
   add("code", spec.codeNote, regions.code.x + 8, regions.code.y + 34, fine, "start");
   titleAt("exec", "执行环境");
   add("exec", spec.exec.short, regions.exec.x + 10, regions.exec.y + 36, fine, "start");
-  if (spec.execDetail) {
-    spec.exec.lines.forEach((text, index) => {
-      add("exec", text, regions.exec.x + 10, regions.exec.y + 52 + index * (mode === "narrow" ? 13 : 15), fine, "start");
-    });
-  }
   titleAt("session", "会话库");
   add("session", "历史仓库", regions.session.x + 10, regions.session.y + 36, fine, "start");
   titleAt("memory", "短记忆");
@@ -504,6 +520,65 @@ function tok(id, text, kind, regionId, ox = 0, oy = 0) {
   return { id, text, kind, regionId, ox, oy };
 }
 
+function alongPoint(points, t) {
+  const lengths = [];
+  let total = 0;
+  for (let index = 1; index < points.length; index += 1) {
+    const len = Math.hypot(points[index].x - points[index - 1].x, points[index].y - points[index - 1].y);
+    lengths.push(len);
+    total += len;
+  }
+  let remain = total * Math.min(0.86, Math.max(0.14, t));
+  for (let index = 1; index < points.length; index += 1) {
+    const span = lengths[index - 1];
+    if (remain <= span || index === points.length - 1) {
+      const u = span === 0 ? 0 : Math.min(1, remain / span);
+      const dx = points[index].x - points[index - 1].x;
+      const dy = points[index].y - points[index - 1].y;
+      const len = Math.hypot(dx, dy) || 1;
+      return {
+        x: points[index - 1].x + dx * u,
+        y: points[index - 1].y + dy * u,
+        nx: -dy / len,
+        ny: dx / len,
+      };
+    }
+    remain -= span;
+  }
+  return { x: points[0].x, y: points[0].y, nx: 0, ny: -1 };
+}
+
+function hitsLabels(box, labels) {
+  return labels.some((item) => overlaps(box, textBox(item)));
+}
+
+function placeToken(item, index, railPoints, liveRails, labels, regions, font, bounds, taken) {
+  const size = tokenSize(item.text, font);
+  const railId = item.rail || liveRails[Math.min(index, Math.max(0, liveRails.length - 1))] || "";
+  const rail = railPoints[railId];
+  const candidates = [];
+  if (rail) {
+    for (const t of [0.42 + index * 0.18, 0.58, 0.3, 0.72]) {
+      const at = alongPoint(rail, t);
+      for (const nudge of [16, -16, 26, -26]) {
+        candidates.push({ x: at.x + at.nx * nudge, y: at.y + at.ny * nudge, rail: railId });
+      }
+    }
+  }
+  const dock = dockPoint(regions, item.regionId, item.ox, item.oy);
+  candidates.push({ x: dock.x, y: dock.y, rail: "" });
+  for (const candidate of candidates) {
+    const box = { x: candidate.x - size.w / 2, y: candidate.y - size.h / 2, w: size.w, h: size.h };
+    if (box.x < 1 || box.y < 1 || box.x + box.w > bounds.w - 1 || box.y + box.h > bounds.h - 1) continue;
+    if (hitsLabels(box, labels) || taken.some((other) => overlaps(box, other))) continue;
+    taken.push(box);
+    return { ...item, ...size, x: candidate.x, y: candidate.y, rail: candidate.rail, mark: MARK[item.kind] ?? "·" };
+  }
+  const fallback = avoidToken({ ...item, ...size, x: dock.x, y: dock.y, mark: MARK[item.kind] ?? "·" }, labels, regions[item.regionId]);
+  taken.push({ x: fallback.x - size.w / 2, y: fallback.y - size.h / 2, w: size.w, h: size.h });
+  return fallback;
+}
+
 function avoidToken(token, labels, region) {
   const box = {
     x: token.x - token.w / 2,
@@ -531,7 +606,7 @@ export function picture(study, mode = "wide") {
   const spec = story(study, seen);
   const profile = execProfile(study.backend);
   profile.detail = spec.execDetail;
-  const gates = placeGates(regions.exec, profile, mode);
+  const gates = placeGates(regions.exec, profile);
   if (study.decision === "once") {
     for (const gate of gates) if (gate.id === "manual") gate.title = "已批准";
   } else if (study.decision === "deny") {
@@ -540,19 +615,20 @@ export function picture(study, mode = "wide") {
   const plates = memoryPlates(regions.memory);
   const font = mode === "narrow" ? 11 : 12;
   const labels = buildLabels(regions, { ...spec, exec: profile }, mode, plates, gates);
-  const tokens = spec.tokens.map((item) => {
-    const size = tokenSize(item.text, font);
-    const point = dockPoint(regions, item.regionId, item.ox, item.oy);
-    const placed = {
-      ...item,
-      ...size,
-      x: point.x,
-      y: point.y,
-      mark: MARK[item.kind] ?? "·",
-    };
-    return avoidToken(placed, labels, regions[item.regionId]);
-  });
   const railPoints = railsFor(regions, mode);
+  const liveRails = [...spec.rails];
+  const taken = [];
+  const tokens = spec.tokens.map((item, index) => placeToken(
+    item,
+    index,
+    railPoints,
+    liveRails,
+    labels,
+    regions,
+    font,
+    { w: layout.viewBox[2], h: layout.viewBox[3] },
+    taken,
+  ));
   const directions = DIRECTIONS[mode];
   const rails = Object.entries(railPoints).map(([id, points]) => ({
     id,
@@ -596,8 +672,9 @@ export function picture(study, mode = "wide") {
     skillBody: spec.skillBody,
     fileFence: spec.fileFence,
     freshNote: spec.freshNote,
-    wiring: study.scene === "map",
+    wiring: study.scene === "map" || study.scene === "purpose" || study.scene === "loop",
     plane: study.plane,
+    decision: study.decision,
     step: seen.index + 1,
     total: seen.total,
   };

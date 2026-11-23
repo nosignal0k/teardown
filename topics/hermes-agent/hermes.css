@@ -158,14 +158,23 @@ button:disabled { opacity: 0.4; }
 .gate.off rect { fill: none; stroke: #8a8175; stroke-width: 1.3; stroke-dasharray: 3 2; }
 
 .rail { fill: none; stroke-linecap: square; stroke-linejoin: round; }
+.rail-bed { fill: none; stroke: #f7f1e6; stroke-width: 7; stroke-linecap: round; stroke-linejoin: round; }
 .rail-control { stroke: var(--ink); }
 .rail-data { stroke: var(--brass); }
 .rail-persist { stroke: var(--persist); }
 .rail-warn { stroke: var(--danger); }
-.rail.is-quiet { opacity: 0.22; stroke-width: 1.3; }
-.rail.is-wire { opacity: 0.55; stroke-width: 1.5; }
-.rail.is-live { opacity: 1; stroke-width: 2.5; }
+.rail.is-quiet { opacity: 0.78; stroke-width: 2.1; }
+.rail.is-wire { opacity: 1; stroke-width: 2.3; }
+.rail.is-live { opacity: 1; stroke-width: 3.5; }
 .rail.is-cut { stroke-dasharray: 5 6; }
+.lane { fill: none; stroke: var(--ink); stroke-width: 2.6; }
+.lane.bypass { stroke: var(--brass); }
+.door { fill: none; stroke-width: 2.6; }
+.door.shut { stroke: var(--danger); }
+.door.open { stroke: var(--persist); }
+.slot { fill: #efe6d6; }
+.sheet { stroke: #c9bba8; stroke-width: 1.6; }
+.port-dot { fill: #edd9b8; stroke: var(--ink); stroke-width: 1; }
 
 .block-old { fill: #e4d3bc; stroke: #8d704c; stroke-width: 0.6; }
 .block-summary { fill: #e39a45; }

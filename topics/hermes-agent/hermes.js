@@ -38,6 +38,7 @@ function render() {
   svg.dataset.frame = pic.frameId;
   svg.dataset.backend = pic.exec.variant;
   svg.dataset.skip = pic.exec.skip ? "true" : "false";
+  svg.dataset.floor = pic.exec.floorOnPath ? "true" : "false";
   svg.innerHTML = draw(pic, animate ? previous.points : null);
   previous = {
     scene: state.scene,
@@ -152,10 +153,10 @@ function draw(pic, origins) {
   const rails = pic.rails.map((rail) => {
     const cls = rail.live ? "is-live" : pic.wiring ? "is-wire" : "is-quiet";
     const cut = rail.cut ? " is-cut" : "";
-    return `<path class="rail rail-${rail.kind} ${cls}${cut}" data-flow="${esc(rail.id)}" data-rail="${esc(rail.id)}" data-dir="${rail.dir}" d="${pathD(rail.points)}" marker-end="url(#arrow)"/>`;
+    const d = pathD(rail.points);
+    return `<path class="rail-bed" d="${d}"/><path class="rail rail-${rail.kind} ${cls}${cut}" data-flow="${esc(rail.id)}" data-rail="${esc(rail.id)}" data-dir="${rail.dir}" d="${d}" marker-end="url(#arrow)"/>`;
   }).join("");
   return `${defs()}
-    ${rails}
     ${housing(pic)}
     ${port(pic, "cli")}
     ${port(pic, "gateway")}
@@ -171,6 +172,8 @@ function draw(pic, origins) {
     ${part(pic, "session", cabinet(pic))}
     ${part(pic, "memory", memory(pic))}
     ${part(pic, "skills", book(pic.regions.skills, pic))}
+    ${rails}
+    ${pic.labels.map(textTag).join("")}
     ${pic.tokens.map((token) => tokenMarkup(token, origins)).join("")}`;
 }
 
@@ -225,7 +228,13 @@ function rotor(box, pic) {
 function viewport(pic) {
   const box = pic.regions.window;
   const blocks = pic.meter ? blocksMarkup(box, pic.meter) : "";
-  return `<rect class="body frame" x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" rx="8"/>${blocks}`;
+  const named = pic.labels.some((item) => item.part === "window" && item.text !== "本轮窗口" && !item.readout);
+  const slots = pic.meter || named ? "" : [0, 1, 2].map((index) => {
+    const y = box.y + 36 + index * 16;
+    if (y + 8 > box.y + box.h - 8) return "";
+    return `<rect class="slot" x="${box.x + 12}" y="${y}" width="${box.w - 24}" height="8" rx="2"/>`;
+  }).join("");
+  return `<rect class="body frame" x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" rx="8"/>${slots}${blocks}`;
 }
 
 function blocksMarkup(box, meter) {
@@ -243,7 +252,12 @@ function blocksMarkup(box, meter) {
 }
 
 function bay(box, kind) {
-  return `<rect class="body bay bay-${kind}" x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" rx="8"/>`;
+  const marks = kind === "file"
+    ? [0, 1, 2].map((index) => `<line class="sheet" x1="${box.x + 14}" y1="${box.y + 48 + index * 12}" x2="${box.x + box.w - 14}" y2="${box.y + 48 + index * 12}"/>`).join("")
+    : kind === "tools"
+      ? `<rect class="port-dot" x="${box.x + 16}" y="${box.y + box.h - 22}" width="18" height="10" rx="2"/><rect class="port-dot" x="${box.x + 40}" y="${box.y + box.h - 22}" width="18" height="10" rx="2"/>`
+      : "";
+  return `<rect class="body bay bay-${kind}" x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" rx="8"/>${marks}`;
 }
 
 function exec(pic) {
@@ -256,10 +270,40 @@ function exec(pic) {
       : `<rect class="body shell" x="${box.x}" y="${box.y}" width="${box.w}" height="${box.h}" rx="12"/>
          <rect class="shell-inner" x="${box.x + 6}" y="${box.y + 6}" width="${box.w - 12}" height="${box.h - 12}" rx="8"/>`;
   const pipe = variant === "mount"
-    ? `<rect class="pipe" x="${box.x + box.w - 18}" y="${box.y + box.h / 2 - 8}" width="14" height="16" rx="2"/>`
+    ? `<rect class="pipe" x="${box.x + box.w - 22}" y="${box.y + 58}" width="18" height="14" rx="2"/>`
     : "";
-  const gates = pic.gates.map((gate) => `<g class="gate ${gate.onPath ? "on" : "off"}"><rect x="${gate.x}" y="${gate.y}" width="${gate.w}" height="${gate.h}" rx="5"/></g>`).join("");
-  return part(pic, "exec", `${shape}${pipe}${gates}${fence}`, `data-variant="${variant}" data-skip="${pic.exec.skip ? "true" : "false"}" data-floor="${pic.exec.floorOnPath ? "true" : "false"}"`);
+  const lane = laneMarkup(pic.gates, box);
+  const gates = pic.gates.map((gate) => `<g class="gate ${gate.onPath ? "on" : "off"}" data-gate="${esc(gate.id)}" data-on-path="${gate.onPath ? "true" : "false"}"><rect x="${gate.x}" y="${gate.y}" width="${gate.w}" height="${gate.h}" rx="5"/>${doorMarkup(gate, pic.decision)}</g>`).join("");
+  return part(pic, "exec", `${shape}${pipe}${lane}${gates}`, `data-variant="${variant}" data-skip="${pic.exec.skip ? "true" : "false"}" data-floor="${pic.exec.floorOnPath ? "true" : "false"}"`);
+}
+
+function laneMarkup(gates, box) {
+  const on = gates.filter((gate) => gate.onPath).sort((a, b) => a.x - b.x || a.y - b.y);
+  if (on.length === 0) return "";
+  const horizontal = on.length > 1 && Math.abs(on[0].y - on[on.length - 1].y) < 6;
+  if (horizontal) {
+    const y = on[0].y + on[0].h / 2;
+    const x0 = on[0].x - 4;
+    const x1 = on[on.length - 1].x + on[on.length - 1].w + 16;
+    return `<path class="lane" d="M${x0} ${y} H${Math.min(x1, box.x + box.w - 8)}" marker-end="url(#arrow)"/>`;
+  }
+  const gate = on[0];
+  const x = gate.x + gate.w / 2;
+  const y0 = gate.y - 10;
+  const y1 = Math.min(box.y + box.h - 16, gate.y + gate.h + 36);
+  return `<path class="lane bypass" d="M${x} ${y0} V${y1}" marker-end="url(#arrow)"/>`;
+}
+
+function doorMarkup(gate, decision) {
+  if (gate.id !== "manual") return "";
+  const barY = gate.y + gate.h / 2;
+  if (decision === "once") {
+    return `<path class="door open" d="M${gate.x + 8} ${gate.y + 8} L${gate.x + 18} ${gate.y + gate.h - 8} H${gate.x + gate.w - 8}"/>`;
+  }
+  if (decision === "deny") {
+    return `<path class="door shut" d="M${gate.x + 10} ${gate.y + 8} L${gate.x + gate.w - 10} ${gate.y + gate.h - 8} M${gate.x + gate.w - 10} ${gate.y + 8} L${gate.x + 10} ${gate.y + gate.h - 8}"/>`;
+  }
+  return `<line class="door shut" x1="${gate.x + 8}" y1="${barY}" x2="${gate.x + gate.w - 8}" y2="${barY}"/>`;
 }
 
 function cabinet(pic) {
@@ -292,7 +336,7 @@ function book(box, pic) {
 function part(pic, id, body, extra = "") {
   const stateClass = id === "housing" ? "is-on" : pic.lit.has(id) ? "is-hot" : "is-dim";
   const fence = id === "file" && pic.fileFence ? fenceOf(pic.regions.file) : "";
-  const texts = pic.labels.filter((item) => item.part === id).map(textTag).join("");
+  const texts = "";
   return `<g class="part ${stateClass}" data-part="${id}" ${extra}>${body}${fence}${texts}</g>`;
 }
 

@@ -73,16 +73,21 @@ test("hermes cutaway steps, switches backend, and stays inside the viewport", as
   await click(socket, page, "[data-value='boundary']");
   await click(socket, page, "[data-do='backend'][data-value='docker']");
   const isolated = await text(socket, page, "document.querySelector('#machine').textContent");
-  assert.match(isolated, /没有主机路径挂载/);
   assert.match(isolated, /用户拒绝/);
   assert.match(isolated, /底线/);
   assert.doesNotMatch(isolated, /等待批准/);
+  assert.doesNotMatch(isolated, /没有主机路径挂载/);
   assert.equal(await text(socket, page, "document.querySelector('#machine').dataset.skip"), "true");
+  assert.equal(await text(socket, page, "document.querySelector('#machine').dataset.floor"), "false");
+  assert.equal(await text(socket, page, "String(document.querySelectorAll('#machine .gate.off').length)"), "2");
+  assert.equal(await text(socket, page, "String(document.querySelector('#machine .lane') !== null)"), "true");
   await click(socket, page, "[data-do='backend'][data-value='docker-mount']");
   const mounted = await text(socket, page, "document.querySelector('#machine').textContent");
   assert.match(mounted, /等待批准/);
   assert.match(mounted, /底线/);
   assert.equal(await text(socket, page, "document.querySelector('#machine').dataset.skip"), "false");
+  assert.equal(await text(socket, page, "document.querySelector('#machine').dataset.floor"), "true");
+  assert.equal(await text(socket, page, "String(document.querySelectorAll('#machine .gate.off').length)"), "0");
 
   await click(socket, page, "[data-value='keep']");
   await click(socket, page, "[data-do='memory']");

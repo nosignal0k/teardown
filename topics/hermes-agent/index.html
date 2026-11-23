@@ -63,7 +63,7 @@
   <details class="caveat">
     <summary>依据、简化和不放进主图的细节</summary>
     <p>事实依据是 Nous Research hermes-agent v0.23.2。标注对象 <a href="https://github.com/NousResearch/hermes-agent/releases/tag/v0.23.2">28f57ed8e3dba4eceb67dfd3e3abda1a7604452d</a> 指向提交 <a href="https://github.com/NousResearch/hermes-agent/commit/ae2a81ccc00e9b7c06301523e5bb09608397149c">ae2a81ccc00e9b7c06301523e5bb09608397149c</a>。查阅日期 2026-11-19。滚动文档会变，和这份代码不一致时以该提交为准。</p>
-    <p><strong>事实。</strong> AIAgent 驱动循环，模型服务在进程外，只返回文本或工具请求。会话库、短记忆、技能是三份存储。短记忆写入磁盘立即生效，系统提示里的快照要到新会话或压缩重建才换。技能先给索引，正文靠 skill_view 再读，不是训练权重。终端的危险命令检查：本机没有容器隔离；Docker 只在 <code>has_host_access</code> 为假时提前返回，返回前仍看用户拒绝规则，硬性底线不在这条提前返回里；挂了主机路径就不跳过。modal、daytona、vercel_sandbox 总是跳过这一层。走进普通检查之后，底线才排在 YOLO 前面。<code>execute_code</code> 的隔离返回是另一条规则，不看那份拒绝规则。压缩默认 <code>in_place</code> 为真，同一个会话 id，原文软归档。定时任务默认新开会话；主机或网关不在，就没有成功结果；任务完成和投递失败分开。</p>
+    <p><strong>事实。</strong> AIAgent 驱动循环，模型服务在进程外，只返回文本或工具请求。会话库、短记忆、技能是三份存储。短记忆写入磁盘立即生效，系统提示里的快照要到新会话或压缩重建才换。技能先给索引，正文靠 skill_view 再读，不是训练权重。终端的危险命令检查：本机没有容器隔离。Docker 没有主机路径挂载（<code>has_host_access</code> 为假）时才提前返回，返回前仍看用户拒绝规则，硬性底线不在这条提前返回里。挂了主机路径就不跳过。modal、daytona、vercel_sandbox 总是跳过这一层。走进普通检查之后，底线才排在 YOLO 前面。手动批准只是显式 manual。<code>execute_code</code> 的隔离返回是另一条规则，不看那份拒绝规则。压缩默认 <code>in_place</code> 为真，同一个会话 id，原文软归档。定时任务默认新开会话；主机或网关不在，就没有成功结果；任务完成和投递失败分开。</p>
     <p><strong>教学简化。</strong> 演示数字、工具顺序、批准和失败都是预设。今日文件在「行程」里收成同一种往返。并行只演示两个只读。窗口上的 92 和 46 是模拟比例，用来看变化，不是某个模型的实测。</p>
     <p><strong>不采用的文档说法。</strong> 同一标签的 agent loop 文档仍写超过 50% 就压缩，并且生成 child session。代码默认不是这样。主图不画固定比例，也不画子会话。安全文档的总表把 Docker 写成一律跳过，比这份代码粗。</p>
     <p><strong>推断。</strong> 这种「留下」是以后调用时多一段文字，不保证下次因此成功，也不证明模型变强。</p>
