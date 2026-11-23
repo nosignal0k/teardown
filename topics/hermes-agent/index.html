@@ -4,357 +4,88 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Hermes Agent · 拆解</title>
-  <meta name="description" content="用图看懂 Nous Research 的 Hermes Agent：模型提出工具请求，运行时执行，会话、记忆和技能分开保存。">
-  <meta name="theme-color" content="#f4efe6">
+  <meta name="description" content="用一台可步进的剖面看 Hermes Agent：模型在进程外，只返回文本或工具请求。">
+  <meta name="theme-color" content="#141311">
   <link rel="stylesheet" href="./hermes.css">
 </head>
 <body>
-  <a class="skip" href="#stage">跳到图示</a>
+  <a class="skip" href="#machine">跳到机器</a>
   <header class="top">
     <a class="back" href="/teardown/" data-teardown-catalog>返回目录</a>
-    <p class="kicker">独立说明 · 不是官方页面</p>
+    <p class="kicker">独立说明 · 不是 Hermes 官方页面</p>
     <h1>Hermes Agent</h1>
-    <p class="lead">它把模型、工具和该留下的记录接成一个循环。模型负责提出请求，软件负责真正执行。</p>
-    <p class="banner">模拟流程，不连接真实 Hermes，不执行命令。数字、批准和失败都是预设。</p>
-    <div class="sample">
-      <p>贯穿例子：两份虚构订单表</p>
-      <div class="sample-row"><span>昨日</span><strong>100</strong><em>订单</em><strong>10,000</strong><em>收入</em></div>
-      <div class="sample-row"><span>今日</span><strong>120</strong><em>订单</em><strong>11,400</strong><em>收入</em></div>
-      <p class="result-line">订单 +20% · 收入 +14% · 客单价 100 → 95（-5%）</p>
-    </div>
-    <div class="legend" aria-label="线条含义">
-      <span><i class="swatch control"></i>控制</span>
-      <span><i class="swatch data"></i>数据</span>
-      <span><i class="swatch persist"></i>持久化</span>
-      <span><i class="swatch external"></i>外部模型</span>
-    </div>
+    <p class="banner">模拟流程，不连接真实 Hermes，不执行命令。</p>
   </header>
-  <div class="shell">
-    <nav class="rail" aria-label="七幕">
-      <a class="scene-link" href="#purpose" data-scene-link="purpose"><b>01 一句任务</b><small>为何多走几步</small></a>
-      <a class="scene-link" href="#map" data-scene-link="map"><b>02 整机</b><small>部件放在哪</small></a>
-      <a class="scene-link" href="#loop" data-scene-link="loop"><b>03 一轮往返</b><small>结果回到模型</small></a>
-      <a class="scene-link" href="#boundary" data-scene-link="boundary"><b>04 三套边界</b><small>谁、何处、哪一步</small></a>
-      <a class="scene-link" href="#keep" data-scene-link="keep"><b>05 留下什么</b><small>四种寿命</small></a>
-      <a class="scene-link" href="#compress" data-scene-link="compress"><b>06 看见什么</b><small>这一轮的输入</small></a>
-      <a class="scene-link" href="#again" data-scene-link="again"><b>07 再次发生</b><small>到点再跑</small></a>
+  <main class="plate" id="stage">
+    <div class="specimen" aria-label="模拟订单">
+      <b>模拟</b>
+      <span>昨日 100 单 · 10,000</span>
+      <span>今日 120 单 · 11,400</span>
+      <span>订单 +20%</span>
+      <span>收入 +14%</span>
+      <span>客单价 100 → 95（-5%）</span>
+    </div>
+    <nav class="rail" aria-label="观察同一台机器">
+      <button type="button" data-do="scene" data-value="purpose" aria-pressed="true" aria-label="行程。模型提出工具请求，Hermes 负责执行并把结果送回来。">行程</button>
+      <button type="button" data-do="scene" data-value="map" aria-pressed="false" aria-label="整机。同一代理核心服务多个入口；模型、执行环境与持久状态分开。">整机</button>
+      <button type="button" data-do="scene" data-value="loop" aria-pressed="false" aria-label="循环。每次结果都成为下一次模型调用的输入。">循环</button>
+      <button type="button" data-do="scene" data-value="boundary" aria-pressed="false" aria-label="边界。授权谁、批准什么、代码在哪跑，是三套边界。">边界</button>
+      <button type="button" data-do="scene" data-value="keep" aria-pressed="false" aria-label="留下。留下的是事实和方法，下一次再作为输入使用。">留下</button>
+      <button type="button" data-do="scene" data-value="compress" aria-pressed="false" aria-label="窗口。磁盘可以保存很多历史，模型这一轮只看到选中的部分。">窗口</button>
+      <button type="button" data-do="scene" data-value="again" aria-pressed="false" aria-label="定时。定时任务换了触发方式，仍要经过模型、工具和投递边界。">定时</button>
     </nav>
-    <main id="stage">
-      <div class="player" role="group" aria-label="当前这一幕的步进">
-        <button type="button" data-do="play" aria-pressed="false">播放</button>
-        <button type="button" data-do="prev">上一步</button>
-        <button type="button" data-do="next">下一步</button>
-        <button type="button" data-do="replay">重放</button>
-        <button type="button" data-do="speed" aria-pressed="false">速度 1×</button>
-      </div>
-      <p class="motion-note">若系统要求减少动态，播放改为单步，不会自动连播。</p>
-      <p class="progress" id="progress">第 1 步</p>
-      <p class="status" id="status" role="status" aria-live="polite">模型提出工具请求，Hermes 负责执行并把结果送回来。</p>
-
-      <section class="scene" id="purpose" data-scene="purpose" aria-labelledby="purpose-title">
-        <h2 id="purpose-title">一句任务，为什么会多走几步</h2>
-        <p class="takeaway">模型提出工具请求，Hermes 负责执行并把结果送回来。</p>
-        <div class="choices">
-          <button type="button" data-do="lens" data-value="ask" aria-pressed="true">看模型在请求什么</button>
-          <button type="button" data-do="lens" data-value="run" aria-pressed="false">看运行时在执行什么</button>
-        </div>
-        <div class="split diagram">
-          <div class="path" data-path="text">
-            <h3>只回文本的示意</h3>
-            <ol class="flow">
-              <li data-node="text-user"><span class="node-name">消息</span></li>
-              <li class="edge" aria-hidden="true"><span class="edge-shaft"></span></li>
-              <li data-node="text-model"><span class="node-name">模型</span></li>
-              <li class="edge" aria-hidden="true"><span class="edge-shaft"></span></li>
-              <li data-node="text-answer"><span class="node-name">回答</span></li>
-            </ol>
-          </div>
-          <div class="path" data-path="hermes">
-            <h3>Hermes · 箭头是交接方向</h3>
-            <ol class="flow">
-              <li data-node="user"><span class="node-name">消息</span></li>
-              <li class="edge" data-edge="to-agent" aria-hidden="true"><span class="edge-shaft"></span></li>
-              <li data-node="agent"><span class="node-name">AIAgent</span></li>
-              <li class="edge" data-edge="to-model" aria-hidden="true"><span class="edge-shaft"></span></li>
-              <li data-node="model"><span class="node-name">模型</span></li>
-              <li class="edge" data-edge="to-tool"><span class="edge-shaft"></span><span class="edge-label">请求工具</span></li>
-              <li data-node="tool"><span class="node-name">工具</span></li>
-              <li class="edge" data-edge="back-model"><span class="edge-shaft"></span><span class="edge-label">结果回到模型</span></li>
-              <li data-node="model-return"><span class="node-name">模型再看结果</span></li>
-              <li class="edge" data-edge="to-brief"><span class="edge-shaft"></span><span class="edge-label">返回文本</span></li>
-              <li data-node="brief"><span class="node-name">简报</span></li>
-            </ol>
-          </div>
-        </div>
-        <p class="meta">左侧只是对照，不表示别的聊天产品都没有工具。</p>
-        <ol class="beats">
-          <li>提出任务</li><li>需要文件</li><li>请求读取</li><li>获得数据</li><li>再次请求</li><li>生成简报</li>
-        </ol>
-        <aside class="ticket">
-          <p class="ticket-kicker">数据</p>
-          <h3>提出任务</h3>
-          <ul><li>比较昨日与今日 CSV</li><li>生成简报</li></ul>
-          <p class="ticket-note">用户只发来一句话。</p>
-        </aside>
-        <p class="sources"><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/agent/conversation_loop.py#L1753-L1807">循环源码</a> · <a href="https://hermes-agent.nousresearch.com/docs/developer-guide/agent-loop">滚动文档 · 2026-11-19</a></p>
-        <details>
-          <summary>深入</summary>
-          <p>对照用的「只回文本」是教学基线。Hermes 也不是某一个名叫 Hermes 的模型；模型可以换成所配置的提供者。CSV 和工具顺序是预设。</p>
-        </details>
-      </section>
-
-      <section class="scene" id="map" data-scene="map" aria-labelledby="map-title">
-        <h2 id="map-title">拆开之后，数据放在哪里</h2>
-        <p class="takeaway">同一代理核心服务多个入口；模型、执行环境与持久状态分开。</p>
-        <div class="diagram" data-diagram="map">
-          <div class="band">
-            <p class="band-label">入口</p>
-            <div class="nodes">
-              <button type="button" class="node" data-kind="control" data-node="cli" data-do="focus">CLI<small>本机对话</small></button>
-              <button type="button" class="node" data-kind="control" data-node="gateway" data-do="focus">Gateway<small>平台消息</small></button>
-            </div>
-          </div>
-          <div class="band">
-            <p class="band-label">核心与外部模型</p>
-            <div class="nodes">
-              <button type="button" class="node" data-kind="control" data-node="agent" data-do="focus">AIAgent<small>驱动循环</small></button>
-              <button type="button" class="node" data-kind="control" data-node="provider" data-do="focus">Provider<small>API 格式</small></button>
-              <button type="button" class="node" data-kind="external" data-node="model" data-do="focus">模型服务<small>进程之外</small></button>
-            </div>
-          </div>
-          <div class="band">
-            <p class="band-label">执行 · 文件工具不进终端框</p>
-            <div class="nodes">
-              <button type="button" class="node" data-kind="control" data-node="tools" data-do="focus">工具分发<small>找到处理器</small></button>
-              <button type="button" class="node" data-kind="warn" data-node="local" data-do="focus">本机<small>无容器隔离</small></button>
-              <button type="button" class="node" data-kind="warn" data-node="docker" data-do="focus">Docker<small>看有没有挂主机</small></button>
-              <button type="button" class="node" data-kind="warn" data-node="modal" data-do="focus">Modal 一类<small>总是跳过这层</small></button>
-              <button type="button" class="node" data-kind="persist" data-node="file" data-do="focus">文件工具<small>单独一支</small></button>
-            </div>
-          </div>
-          <div class="band">
-            <p class="band-label">状态 · 三样分开</p>
-            <div class="nodes">
-              <button type="button" class="node" data-kind="persist" data-node="session" data-do="focus">会话库<small>历史</small></button>
-              <button type="button" class="node" data-kind="persist" data-node="memory" data-do="focus">短记忆<small>少量事实</small></button>
-              <button type="button" class="node" data-kind="persist" data-node="skill" data-do="focus">技能<small>做法正文</small></button>
-            </div>
-          </div>
-        </div>
-        <p class="duty" id="duty">AIAgent 驱动循环、预算和停止。它不自己充当模型。</p>
-        <div class="choices">
-          <button type="button" data-do="backend" data-value="local" aria-pressed="true">终端：本机</button>
-          <button type="button" data-do="backend" data-value="docker" aria-pressed="false">Docker：无主机挂载</button>
-          <button type="button" data-do="backend" data-value="docker-mount" aria-pressed="false">Docker：挂了主机路径</button>
-          <button type="button" data-do="backend" data-value="modal" aria-pressed="false">Modal 一类</button>
-        </div>
-        <ol class="beats"><li>输入抵达</li><li>准备上下文</li><li>模型请求</li><li>工具分发</li><li>后端执行</li><li>保存与回答</li></ol>
-        <aside class="ticket"><p class="ticket-kicker">控制</p><h3>输入抵达</h3><ul><li>CLI 或 Gateway</li></ul><p class="ticket-note">入口不同，核心相同。</p></aside>
-        <p class="sources"><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/website/docs/developer-guide/architecture.md#L148-L176">固定版本架构</a> · <a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/agent/agent_init.py#L276-L324">API 格式</a></p>
-        <details>
-          <summary>深入</summary>
-          <p>还有 ACP、API、批处理等入口，主图收着。模型服务用虚线框，因为它不是本地 Python 进程。记忆和技能不是一个总在后台思考的大脑。可选的外部记忆提供者没有画进默认安装。</p>
-        </details>
-      </section>
-
-      <section class="scene" id="loop" data-scene="loop" aria-labelledby="loop-title">
-        <h2 id="loop-title">跟踪一轮，看见来回的形状</h2>
-        <p class="takeaway">每次结果都成为下一次模型调用的输入。</p>
-        <div class="choices">
-          <button type="button" data-do="loop" data-value="read" aria-pressed="true">读取并作答</button>
-          <button type="button" data-do="loop" data-value="error" aria-pressed="false">工具失败</button>
-          <button type="button" data-do="loop" data-value="parallel" aria-pressed="false">两个只读</button>
-        </div>
-        <div class="flow diagram" aria-label="控制怎么交，结果先回到模型">
-          <div class="lane" data-node="entry"><span class="node-name">入口</span></div>
-          <div class="edge" data-edge="to-agent" aria-hidden="true"><span class="edge-shaft"></span></div>
-          <div class="lane" data-node="agent"><span class="node-name">AIAgent</span></div>
-          <div class="edge" data-edge="to-model" aria-hidden="true"><span class="edge-shaft"></span></div>
-          <div class="lane" data-node="model"><span class="node-name">模型</span></div>
-          <div class="edge" data-edge="to-tool"><span class="edge-shaft"></span><span class="edge-label">请求工具</span></div>
-          <div class="lane" data-node="tool"><span class="node-name">工具</span></div>
-          <div class="edge" data-edge="back-model"><span class="edge-shaft"></span><span class="edge-label">结果回到模型</span></div>
-          <div class="lane" data-node="model-return"><span class="node-name">模型再看结果</span></div>
-          <div class="edge" data-edge="to-db"><span class="edge-shaft"></span><span class="edge-label">写入会话</span></div>
-          <div class="lane" data-node="db"><span class="node-name">会话库</span></div>
-        </div>
-        <ol class="beats"><li>查会话</li><li>组装输入</li><li>请求模型</li><li>收到 tool_call</li><li>执行读取</li><li>追加结果</li><li>再次请求</li><li>最终回答</li><li>保存</li></ol>
-        <aside class="ticket"><p class="ticket-kicker">数据</p><h3>查会话</h3><ul><li>按会话取出历史</li></ul><p class="ticket-note">一次用户消息可以对应多次模型请求。</p></aside>
-        <p class="sources"><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/agent/turn_tool_round.py#L49-L171">先落盘再执行</a> · <a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/tools/registry.py#L1066-L1101">异常包成结果</a></p>
-        <details>
-          <summary>深入</summary>
-          <p>教学上把「再读今日文件」收成同一种往返。并行按钮只演示两个只读，不暗示两次写入互不冲突。需要代理状态的工具（短记忆、会话检索、委派、任务清单）由代理层处理，不走普通注册表。任务清单现在的名字是 <code>todo_list</code>，<code>todo</code> 只是旧名。</p>
-          <p>工具请求会先写入会话，再执行。用户取消模型请求，不会自动收回已经发生的写入或已经发出的消息。</p>
-        </details>
-      </section>
-
-      <section class="scene" id="boundary" data-scene="boundary" aria-labelledby="boundary-title">
-        <h2 id="boundary-title">三套边界，不是一个批准框</h2>
-        <p class="takeaway">授权谁、批准什么、代码在哪跑，是三套边界。</p>
-        <p class="host-note">本机执行没有容器隔离。Docker 只有在没有主机路径挂载时才跳过危险命令检查；挂了主机路径就走普通检查。下面的手动批准只代表显式的 manual，不是每个工具的全局默认。</p>
-        <div class="flow bounds diagram">
-          <article class="bound" data-node="who"><h3>谁能发来</h3><p>允许进入的人或会话。没通过，就不会跑循环。</p></article>
-          <div class="edge" data-edge="to-where" aria-hidden="true"><span class="edge-shaft"></span></div>
-          <article class="bound" data-node="where"><h3>在哪里执行</h3><p>本机、隔离的 Docker、挂了主机路径的 Docker，或 Modal 一类。检查不是同一支。</p></article>
-          <div class="edge" data-edge="to-what" aria-hidden="true"><span class="edge-shaft"></span></div>
-          <article class="bound" data-node="what"><h3>这一步做什么</h3><p>读取、命令、写文件，各自有自己的门。</p></article>
-        </div>
-        <div class="choices">
-          <button type="button" data-do="backend" data-value="local" aria-pressed="true">本机 + 手动</button>
-          <button type="button" data-do="backend" data-value="docker" aria-pressed="false">Docker：无主机挂载</button>
-          <button type="button" data-do="backend" data-value="docker-mount" aria-pressed="false">Docker：挂了主机路径</button>
-          <button type="button" data-do="backend" data-value="modal" aria-pressed="false">Modal 一类</button>
-          <button type="button" data-do="decision" data-value="deny">拒绝</button>
-          <button type="button" data-do="decision" data-value="once">批准一次</button>
-          <button type="button" data-do="file-root" aria-pressed="false">只看文件写入范围</button>
-        </div>
-        <ol class="beats"><li>谁能发来</li><li>命令请求</li><li>匹配危险规则</li><li>等待批准</li><li>仍在等待</li></ol>
-        <aside class="ticket"><p class="ticket-kicker">边界</p><h3>谁能发来</h3><ul><li>模拟：个人会话已在允许范围</li></ul><p class="ticket-note">身份授权是第一套边界。</p></aside>
-        <p class="sources"><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/tools/approval.py#L1282-L1296">何时跳过</a> · <a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/tools/approval.py#L1402-L1413">提前返回</a> · <a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/tools/terminal_tool.py#L156-L172">谁传入挂载标志</a></p>
-        <details>
-          <summary>深入</summary>
-          <p>下面说的是终端命令的 <code>check_all_command_guards</code>。<code>_run_approval_guards</code> 把 <code>_docker_has_host_access(config)</code> 传进去。Docker 只在这个标志为假时跳过：没有把工作目录挂进容器，卷规格也不像主机路径。标志为真就走普通检查。modal、daytona、vercel_sandbox 总是跳过这一层，那个标志加不回来。</p>
-          <p>跳过的那一支在调用硬性底线之前就返回，返回前只再看用户自己的拒绝规则。所以不能说底线永远先跑，也不能说隔离容器仍保留底线。走进普通检查之后，底线才排在 YOLO 前面。智能模式可以由辅助模型放过它认为低风险的命令。定时任务里的危险命令默认拒绝，这个默认可以改。<code>execute_code</code> 的隔离返回是直接放行，不看那份拒绝规则。传入容器的环境变量仍可能被读到。安全文档的总表把 Docker 写成一律跳过，比这份代码粗。</p>
-          <p>文件写入范围只限制 <code>write_file</code> 和 <code>patch</code>。终端、插件和 MCP 不因此被同一条线围住。页面不展示可复制的破坏性命令，也不真正删除任何东西。</p>
-        </details>
-      </section>
-
-      <section class="scene" id="keep" data-scene="keep" aria-labelledby="keep-title">
-        <h2 id="keep-title">一次任务之后，留下了什么</h2>
-        <p class="takeaway">留下的是事实和方法，下一次再作为输入使用。</p>
-        <div class="seal" data-node="weights"><span>外部模型</span><strong>没有改模型权重</strong><small>保存技能不是训练</small></div>
-        <div class="lives diagram">
-          <article class="life" data-node="context"><header><h3>本轮上下文</h3><b>这一次送出的</b></header><p>简报和工具结果在这轮消息里。</p></article>
-          <article class="life" data-node="history"><header><h3>会话历史</h3><b>可再找回来</b></header><p>整段对话留在库里，不会每轮整库重发。</p></article>
-          <article class="life" data-node="memory"><header><h3>短记忆</h3><b data-memory-label>快照：（空）</b></header><p>少量偏好。提示里是冻结的快照。</p></article>
-          <article class="life" data-node="skill"><header><h3>技能</h3><b data-skill-label>还没保存</b></header><p>先看见索引，再按需读正文。</p></article>
-        </div>
-        <div class="choices">
-          <button type="button" data-do="memory" aria-pressed="false">把「偏好先看百分比」写入短记忆</button>
-          <button type="button" data-do="skill" aria-pressed="false">把比较步骤存成技能</button>
-          <button type="button" data-do="plane" data-value="snapshot" aria-pressed="true">看提示快照</button>
-          <button type="button" data-do="plane" data-value="disk" aria-pressed="false">看磁盘现在的内容</button>
-        </div>
-        <ol class="beats"><li>任务完成</li><li>选择保留</li><li>写入磁盘</li><li>快照仍旧</li><li>新会话</li><li>加载快照</li><li>看见索引</li><li>按需读技能</li></ol>
-        <aside class="ticket"><p class="ticket-kicker">数据</p><h3>任务完成</h3><ul><li>订单 +20%</li><li>收入 +14%</li><li>客单价 100 → 95（-5%）</li></ul><p class="ticket-note">四样东西还叠在一起。</p></aside>
-        <p class="sources"><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/tools/memory_tool_store.py#L177-L180">快照与磁盘</a> · <a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/tools/skills_tool.py#L634-L639">skill_view</a></p>
-        <details>
-          <summary>深入</summary>
-          <p>内置短记忆默认写在配置目录的 MEMORY.md 和 USER.md，字数上限的代码默认值是 2200 和 1375。系统提示在会话中复用已保存的字节；写入磁盘不会立刻重绘这份提示。压缩重建时才会重新从磁盘加载。技能索引在这份代码里放在会变的那一层，固定技能的正文可以留在更稳定的前缀。滚动文档对这两层的说法曾经互相打架，这里以 v0.23.2 的源码为准。</p>
-          <p>技能写下去，只是以后多一段可读取的文字。它不保证下次成功，也不改变模型权重。</p>
-        </details>
-      </section>
-
-      <section class="scene" id="compress" data-scene="compress" aria-labelledby="compress-title">
-        <h2 id="compress-title">对话长了，这一轮仍然只能看见一部分</h2>
-        <p class="takeaway">磁盘可以保存很多历史，模型这一轮只看到选中的部分。</p>
-        <div class="diagram meters">
-          <p class="meter-caption">下面的比例是模拟，用来看变化，不是实测。</p>
-          <article class="life" data-node="input">
-            <header><h3>本轮输入</h3><b data-readout="input">模拟 92</b></header>
-            <div class="bar" role="img" aria-label="本轮输入：旧输出 78，近期 14">
-              <i data-part="old" style="width:78%"></i>
-              <i data-part="summary" style="width:0%"></i>
-              <i data-part="recent" style="width:14%"></i>
-            </div>
-          </article>
-          <div class="edge" data-edge="to-archive" aria-hidden="true"><span class="edge-shaft"></span></div>
-          <article class="life archive" data-node="archive">
-            <header><h3>会话库</h3><b data-readout="archive">模拟 100，原文还在</b></header>
-            <div class="bar" role="img" aria-label="会话库保持 100">
-              <i data-part="archive" style="width:100%"></i>
-            </div>
-          </article>
-          <p class="meter-legend"><span><i class="swatch data"></i>旧输出</span><span><i class="swatch external"></i>摘要</span><span><i class="swatch control"></i>近期</span><span><i class="swatch persist"></i>库里的原文</span></p>
-        </div>
-        <div class="choices">
-          <button type="button" data-do="compress" data-value="kept" aria-pressed="true">摘要留下要点</button>
-          <button type="button" data-do="compress" data-value="miss" aria-pressed="false">摘要漏了客单价</button>
-          <button type="button" data-do="retrieve" aria-pressed="false">模拟取回旧细节</button>
-        </div>
-        <ol class="beats"><li>输出累积</li><li>接近阈值</li><li>旧输出精简</li><li>生成摘要</li><li>留下近期</li><li>继续请求</li></ol>
-        <aside class="ticket"><p class="ticket-kicker">数据</p><h3>输出累积</h3><ul><li>工具输出又长了一截</li></ul><p class="ticket-note">上下文和磁盘不是同一叠纸。</p></aside>
-        <p class="sources"><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/agent/agent_init.py#L1428-L1430">默认原地压缩</a> · <a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/website/docs/developer-guide/agent-loop.md#L181-L214">同标签上的旧说法</a></p>
-        <details>
-          <summary>深入</summary>
-          <p>代码默认 <code>compression.in_place</code> 为真：在同一个会话 id 上改写要送出的消息，压缩前的内容软归档，仍可搜索，默认不新开子会话。同一标签里的 agent loop 文档仍写「超过 50% 就压缩」并且「生成 child session」。那是文档和代码不一致，主图不采用文档里的固定比例，也不画会话分裂。</p>
-          <p>配置里的起始比例是 0.50，但上下文窗口小于 512K 时，代码会把触发比例抬到至少 0.75，另外还有按模型覆盖。所以不能说每个模型到 50% 一定压缩。检索是 SQLite 的 FTS5 全文检索，不是默认的向量检索。摘要遗漏之后再搜，也不保证每次都找回。</p>
-        </details>
-      </section>
-
-      <section class="scene" id="again" data-scene="again" aria-labelledby="again-title">
-        <h2 id="again-title">聊天窗口之外，同一件事怎样再做一次</h2>
-        <p class="takeaway">定时任务换了触发方式，仍要经过模型、工具和投递边界。</p>
-        <div class="choices">
-          <button type="button" data-do="schedule" aria-pressed="false">模拟：每天生成简报</button>
-          <button type="button" data-do="host" data-value="offline" aria-pressed="false">主机离线</button>
-          <button type="button" data-do="delivery" data-value="fail" aria-pressed="false">投递失败</button>
-          <button type="button" data-do="model" data-value="down" aria-pressed="false">模型不可用</button>
-        </div>
-        <div class="nodes diagram">
-          <div class="node" data-kind="persist" data-node="plan">计划<small>还没运行</small></div>
-          <div class="node" data-kind="control" data-node="agent">新会话<small>不带全部旧聊天</small></div>
-          <div class="node" data-kind="external" data-node="model">模型<small>仍在外面</small></div>
-          <div class="node" data-kind="warn" data-node="tool">工具循环<small>运行时执行</small></div>
-          <div class="node" data-kind="persist" data-node="deliver">投递<small>另一步</small></div>
-        </div>
-        <ol class="beats"><li>尚未计划</li></ol>
-        <aside class="ticket"><p class="ticket-kicker">控制</p><h3>尚未计划</h3><ul><li>要点按钮才会送进调度</li></ul><p class="ticket-note">不会偷偷创建任务。</p></aside>
-        <div class="trade" data-trade>
-          <button type="button" data-do="trade" data-trade="tools" aria-pressed="false">工具能力 / 副作用</button>
-          <button type="button" data-do="trade" data-trade="state" aria-pressed="false">持久状态 / 互相污染</button>
-          <button type="button" data-do="trade" data-trade="compact" aria-pressed="false">压缩 / 丢掉细节</button>
-          <button type="button" data-do="trade" data-trade="cron" aria-pressed="false">自动再跑 / 主机与凭据</button>
-          <p id="trade-note">点一个取舍，看它换来什么、又留下什么。</p>
-        </div>
-        <p class="sources"><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/cron/scheduler.py#L2574-L2576">新的任务会话</a> · <a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/gateway/run_inbound.py#L1345-L1347">网关入口</a></p>
-        <details>
-          <summary>深入</summary>
-          <p>Gateway 是连接已配置消息平台的常驻进程：授权、会话键、跑一轮、再把文字送回去。定时任务由它或同一台主机上的调度触发。普通任务默认开一个新的会话，而不是把所有聊天历史接上。另有不调用模型、只跑脚本的模式。正在跑的定时任务默认不能再创建定时任务，避免无人看管时自己越排越多；这个限制是策略，配置可以打开。</p>
-          <p>主机没开、网关没在跑，就不会有成功结果。模型失败时，只有配置了备用提供者才会再试，而且仍可能失败。父代理和子代理各有自己的步数预算，不能把一边的上限当成整棵调用树的花费上限。这份代码里，主循环的步数默认不封顶，子代理的默认上限是 250。同标签的 agent loop 文档仍写 500 和 50，以代码为准。</p>
-        </details>
-      </section>
-
-      <footer>
-        <p>依据 Nous Research hermes-agent v0.23.2。标注对象 28f57ed8e3dba4eceb67dfd3e3abda1a7604452d 指向提交 ae2a81ccc00e9b7c06301523e5bb09608397149c。查阅日期 2026-11-19。</p>
-        <details>
-          <summary>依据列表</summary>
-          <ul>
-            <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/agent/turn_context.py#L1274-L1286">用户消息进入历史</a></li>
-            <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/model_tools.py#L631-L632">记忆、检索、委派、任务清单由代理层处理</a></li>
-            <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/agent/tool_executor.py#L1698-L1727">一条调用先看代理层工具</a></li>
-            <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/agent/tool_dispatch_helpers.py#L31">哪些工具不并行</a></li>
-            <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/agent/context_compressor.py#L1151-L1154">小窗口阈值下限</a></li>
-            <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/agent/context_compressor.py#L2754-L2758">下限如何生效</a></li>
-            <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/agent/agent_init.py#L1314-L1318">起始比例 0.50</a></li>
-            <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/agent/system_prompt.py#L751-L847">提示分层、复用与压缩后重载</a></li>
-            <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/agent/conversation_loop.py#L866-L868">继续会话时复用已存提示</a></li>
-            <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/tools/memory_tool.py#L56">记忆字数默认</a></li>
-            <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/tools/memory_tool_store.py#L655-L658">提示读的是快照</a></li>
-            <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/tools/skills_tool.py#L88-L89">技能目录</a></li>
-            <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/tools/todo_tool.py#L229-L287">任务清单的现名和旧名</a></li>
-            <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/agent/file_safety.py#L330-L411">文件写入范围</a></li>
-            <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/tools/approval.py#L1408-L1413">容器快路径在底线之前返回</a></li>
-            <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/tools/terminal_tool.py#L1190-L1196">终端把挂载标志传进检查</a></li>
-            <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/tools/approval.py#L1310-L1323">走进普通检查之后，底线先于 YOLO</a></li>
-            <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/tools/approval_context.py#L369-L381">定时任务默认拒绝危险命令</a></li>
-            <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/hermes_state.py#L184">会话库路径</a></li>
-            <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/hermes_state.py#L483">FTS5</a></li>
-            <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/gateway/run.py#L3577-L3730">会话键与授权</a></li>
-            <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/gateway/run_inbound.py#L228">未授权则不进入循环</a></li>
-            <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/cron/scheduler.py#L419-L431">定时任务里默认拿掉再调度的工具</a></li>
-            <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/cron/scheduler.py#L1505-L1508">只跑脚本、不调用模型</a></li>
-            <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/hermes_cli/config_defaults.py#L64-L67">主循环步数默认不封顶</a></li>
-            <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/hermes_cli/config_defaults.py#L1309-L1310">子代理默认 250 步</a></li>
-            <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/hermes_cli/config_defaults.py#L1745-L1751">默认定时任务不能再创建定时任务</a></li>
-            <li><a href="https://hermes-agent.nousresearch.com/docs/developer-guide/architecture">滚动文档 · 架构 · 2026-11-19</a></li>
-            <li><a href="https://hermes-agent.nousresearch.com/docs/user-guide/security">滚动文档 · 安全 · 2026-11-19</a></li>
-          </ul>
-        </details>
-        <p><a href="/teardown/" data-teardown-catalog>返回目录</a></p>
-      </footer>
-    </main>
-  </div>
+    <div class="player" role="group" aria-label="步进">
+      <button type="button" data-do="play" aria-pressed="false">播放</button>
+      <button type="button" data-do="prev">上一步</button>
+      <button type="button" data-do="next">下一步</button>
+      <button type="button" data-do="replay">重放</button>
+      <button type="button" data-do="speed" aria-pressed="false">速度 1×</button>
+    </div>
+    <p class="motion-note">若系统要求减少动态，播放改为单步，不会自动连播。</p>
+    <p id="progress">第 1 步</p>
+    <p id="caption" role="status" aria-live="polite">用户消息进到循环引擎，模型还没被叫。</p>
+    <div id="dock"></div>
+    <svg id="machine" aria-labelledby="caption"></svg>
+    <p class="key" aria-label="图例">
+      <span><i class="k-control"></i>控制交接</span>
+      <span><i class="k-data"></i>数据</span>
+      <span><i class="k-persist"></i>写入</span>
+      <span><i class="k-out"></i>进程外</span>
+      <span><i class="k-old"></i>旧输出</span>
+      <span><i class="k-sum"></i>摘要</span>
+      <span><i class="k-recent"></i>近期</span>
+    </p>
+    <p class="facts">
+      <span>本机执行没有容器隔离。</span>
+      <span>没有改模型权重。</span>
+    </p>
+  </main>
+  <details class="caveat">
+    <summary>依据、简化和不放进主图的细节</summary>
+    <p>事实依据是 Nous Research hermes-agent v0.23.2。标注对象 <a href="https://github.com/NousResearch/hermes-agent/releases/tag/v0.23.2">28f57ed8e3dba4eceb67dfd3e3abda1a7604452d</a> 指向提交 <a href="https://github.com/NousResearch/hermes-agent/commit/ae2a81ccc00e9b7c06301523e5bb09608397149c">ae2a81ccc00e9b7c06301523e5bb09608397149c</a>。查阅日期 2026-11-19。滚动文档会变，和这份代码不一致时以该提交为准。</p>
+    <p><strong>事实。</strong> AIAgent 驱动循环，模型服务在进程外，只返回文本或工具请求。会话库、短记忆、技能是三份存储。短记忆写入磁盘立即生效，系统提示里的快照要到新会话或压缩重建才换。技能先给索引，正文靠 skill_view 再读，不是训练权重。终端的危险命令检查：本机没有容器隔离；Docker 只在 <code>has_host_access</code> 为假时提前返回，返回前仍看用户拒绝规则，硬性底线不在这条提前返回里；挂了主机路径就不跳过。modal、daytona、vercel_sandbox 总是跳过这一层。走进普通检查之后，底线才排在 YOLO 前面。<code>execute_code</code> 的隔离返回是另一条规则，不看那份拒绝规则。压缩默认 <code>in_place</code> 为真，同一个会话 id，原文软归档。定时任务默认新开会话；主机或网关不在，就没有成功结果；任务完成和投递失败分开。</p>
+    <p><strong>教学简化。</strong> 演示数字、工具顺序、批准和失败都是预设。今日文件在「行程」里收成同一种往返。并行只演示两个只读。窗口上的 92 和 46 是模拟比例，用来看变化，不是某个模型的实测。</p>
+    <p><strong>不采用的文档说法。</strong> 同一标签的 agent loop 文档仍写超过 50% 就压缩，并且生成 child session。代码默认不是这样。主图不画固定比例，也不画子会话。安全文档的总表把 Docker 写成一律跳过，比这份代码粗。</p>
+    <p><strong>推断。</strong> 这种「留下」是以后调用时多一段文字，不保证下次因此成功，也不证明模型变强。</p>
+    <p>手动批准只代表显式的 manual，不是每个工具的全局保证。智能模式可以由辅助模型放过它认为低风险的命令。定时任务里的危险命令默认拒绝，这个默认可以改。文件写入范围只约束 write_file 和 patch。取消模型请求不会自动收回已经发生的写入。会话检索是 SQLite FTS5，不是默认的向量库。两个进程不要写同一个 Hermes 主目录。</p>
+    <ul>
+      <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/agent/conversation_loop.py#L1753-L1807">循环</a></li>
+      <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/tools/approval.py#L1282-L1296">何时跳过命令检查</a></li>
+      <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/tools/approval.py#L1402-L1413">提前返回</a></li>
+      <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/tools/terminal_tool.py#L156-L172">谁传入挂载标志</a></li>
+      <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/tools/memory_tool_store.py#L177-L180">快照与磁盘</a></li>
+      <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/agent/agent_init.py#L1428-L1430">默认原地压缩</a></li>
+      <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/website/docs/developer-guide/agent-loop.md#L181-L214">同标签上的旧说法</a></li>
+      <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/cron/scheduler.py#L2574-L2576">新的任务会话</a></li>
+      <li><a href="https://github.com/NousResearch/hermes-agent/blob/ae2a81ccc00e9b7c06301523e5bb09608397149c/agent/system_prompt.py#L751-L847">压缩后重载提示</a></li>
+      <li><a href="https://hermes-agent.nousresearch.com/docs/developer-guide/architecture">滚动文档 · 架构 · 2026-11-19</a></li>
+      <li><a href="https://hermes-agent.nousresearch.com/docs/user-guide/security">滚动文档 · 安全 · 2026-11-19</a></li>
+    </ul>
+  </details>
+  <footer class="colophon">
+    <p class="pin">依据 Nous Research hermes-agent v0.23.2。标注对象 28f57ed8e3dba4eceb67dfd3e3abda1a7604452d 指向提交 ae2a81ccc00e9b7c06301523e5bb09608397149c。查阅日期 2026-11-19。</p>
+    <p><a href="/teardown/" data-teardown-catalog>返回目录</a></p>
+  </footer>
   <script type="module" src="./hermes.js"></script>
 </body>
 </html>

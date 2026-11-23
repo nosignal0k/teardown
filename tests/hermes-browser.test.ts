@@ -8,7 +8,7 @@ import { buildSite } from "../src/build.ts";
 import { startServer } from "../src/dev-server.ts";
 import { repoRoot } from "../src/site.ts";
 
-test("hermes page controls, backend switch, accordion, and narrow layout", async (t) => {
+test("hermes cutaway steps, switches backend, and stays inside the viewport", async (t) => {
   const outDir = fs.mkdtempSync(path.join(os.tmpdir(), "teardown-hermes-"));
   t.after(() => {
     for (let attempt = 0; attempt < 8; attempt += 1) {
@@ -59,10 +59,10 @@ test("hermes page controls, backend switch, accordion, and narrow layout", async
   const first = await text(socket, page, "document.getElementById('progress').textContent");
   assert.match(first, /提出任务/);
   await click(socket, page, "[data-do='next']");
-  const stepped = await text(socket, page, "document.getElementById('progress').textContent");
+  const stepped = await text(socket, page, "document.getElementById('caption').textContent");
   assert.match(stepped, /需要文件/);
-  const packet = await text(socket, page, "document.querySelector('#purpose .packet')?.textContent || ''");
-  assert.match(packet, /任务/);
+  const token = await text(socket, page, "document.querySelector('#machine [data-token]')?.getAttribute('data-token') || ''");
+  assert.match(token, /看不见文件/);
   await click(socket, page, "[data-do='replay']");
   assert.match(await text(socket, page, "document.getElementById('progress').textContent"), /提出任务/);
 
@@ -70,21 +70,28 @@ test("hermes page controls, backend switch, accordion, and narrow layout", async
     document.querySelector("[data-do='next']").dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));`);
   assert.match(await text(socket, page, "document.getElementById('progress').textContent"), /需要文件/);
 
-  await click(socket, page, "a[data-scene-link='boundary']");
-  await click(socket, page, "#boundary [data-value='docker']");
-  const isolated = await text(socket, page, "document.querySelector('#boundary .beats').textContent");
-  assert.match(isolated, /隔离才跳过/);
+  await click(socket, page, "[data-value='boundary']");
+  await click(socket, page, "[data-do='backend'][data-value='docker']");
+  const isolated = await text(socket, page, "document.querySelector('#machine').textContent");
+  assert.match(isolated, /没有主机路径挂载/);
+  assert.match(isolated, /用户拒绝/);
+  assert.match(isolated, /底线/);
   assert.doesNotMatch(isolated, /等待批准/);
-  await click(socket, page, "#boundary [data-value='docker-mount']");
-  const mounted = await text(socket, page, "document.querySelector('#boundary .beats').textContent");
+  assert.equal(await text(socket, page, "document.querySelector('#machine').dataset.skip"), "true");
+  await click(socket, page, "[data-do='backend'][data-value='docker-mount']");
+  const mounted = await text(socket, page, "document.querySelector('#machine').textContent");
   assert.match(mounted, /等待批准/);
-  assert.match(mounted, /先走底线/);
+  assert.match(mounted, /底线/);
+  assert.equal(await text(socket, page, "document.querySelector('#machine').dataset.skip"), "false");
 
-  await run(socket, page, `document.querySelector("#boundary details").open = false;
-    document.querySelector("#boundary details summary").click();`);
-  assert.equal(await text(socket, page, "String(document.querySelector('#boundary details').open)"), "true");
+  await click(socket, page, "[data-value='keep']");
+  await click(socket, page, "[data-do='memory']");
+  for (let index = 0; index < 3; index += 1) await click(socket, page, "[data-do='next']");
+  const memory = await text(socket, page, "document.querySelector('#machine').textContent");
+  assert.match(memory, /偏好先看百分比/);
+  assert.match(memory, /（空）/);
 
-  await click(socket, page, "a[data-scene-link='compress']");
+  await click(socket, page, "[data-value='compress']");
   const before = await text(socket, page, "document.querySelector('[data-readout=input]').textContent");
   assert.match(before, /92/);
   await click(socket, page, "[data-do='next']");
@@ -96,10 +103,7 @@ test("hermes page controls, backend switch, accordion, and narrow layout", async
   assert.match(archive, /100/);
   assert.notEqual(before, after);
 
-  await click(socket, page, "a[data-scene-link='purpose']");
-  for (let step = 0; step < 3; step += 1) await click(socket, page, "[data-do='next']");
-  const order = await text(socket, page, "document.querySelector('#purpose [data-path=hermes] .flow').innerText");
-  assert.match(order, /工具[\s\S]*结果回到模型[\s\S]*模型再看结果[\s\S]*简报/);
+  await click(socket, page, "[data-value='map']");
   await send(socket, "Emulation.setDeviceMetricsOverride", {
     width: 1100, height: 900, deviceScaleFactor: 1, mobile: false,
   }, page);
@@ -114,9 +118,11 @@ test("hermes page controls, backend switch, accordion, and narrow layout", async
   }, page);
   assert.equal(await text(socket, page, GEOMETRY), "ok");
   assert.equal(await text(socket, page, ARROWS), "ok");
-  await click(socket, page, "a[data-scene-link='loop']");
+  await click(socket, page, "[data-value='loop']");
   assert.equal(await text(socket, page, GEOMETRY), "ok");
-  await click(socket, page, "a[data-scene-link='boundary']");
+  await click(socket, page, "[data-value='boundary']");
+  assert.equal(await text(socket, page, GEOMETRY), "ok");
+  await click(socket, page, "[data-value='compress']");
   assert.equal(await text(socket, page, GEOMETRY), "ok");
   const overflow = await text(socket, page, "String(document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)");
   assert.equal(overflow, "false");
@@ -124,41 +130,58 @@ test("hermes page controls, backend switch, accordion, and narrow layout", async
 
 const GEOMETRY = `(() => {
   const problems = [];
-  const scene = document.querySelector(".scene:not([hidden])");
-  if (!scene) return "no scene";
-  for (const flow of scene.querySelectorAll(".flow")) {
-    const box = flow.getBoundingClientRect();
-    const names = [...flow.querySelectorAll(".node-name")];
-    const marks = [...flow.querySelectorAll(".edge-label, .packet")];
-    for (const mark of marks) {
-      const rect = mark.getBoundingClientRect();
-      if (rect.width < 1 || rect.height < 1) continue;
-      const label = (mark.textContent || "").trim();
-      if (rect.left < box.left - 1 || rect.right > box.right + 1 || rect.top < box.top - 1 || rect.bottom > box.bottom + 1) {
-        problems.push("outside:" + label);
-      }
-      if (rect.height > 36) problems.push("wrapped:" + label);
-      for (const name of names) {
-        const node = name.getBoundingClientRect();
-        const overlaps = rect.left < node.right - 1 && rect.right > node.left + 1 && rect.top < node.bottom - 1 && rect.bottom > node.top + 1;
-        if (overlaps) problems.push("overlap:" + label + "/" + (name.textContent || "").trim());
+  const svg = document.querySelector("#machine");
+  if (!svg) return "no machine";
+  const box = svg.getBoundingClientRect();
+  if (box.width < 300) problems.push("narrow-svg");
+  const texts = [...svg.querySelectorAll("text")];
+  if (texts.length < 12) problems.push("few-labels");
+  for (const text of texts) {
+    const rect = text.getBoundingClientRect();
+    if (rect.width < 1 || rect.height < 1) continue;
+    const label = (text.textContent || "").trim().slice(0, 16);
+    if (rect.left < box.left - 2 || rect.right > box.right + 2 || rect.top < box.top - 2 || rect.bottom > box.bottom + 2) {
+      problems.push("outside:" + label);
+    }
+    if (rect.width < 14 && rect.height > 32) problems.push("stacked:" + label);
+  }
+  for (let i = 0; i < texts.length; i += 1) {
+    const a = texts[i].getBoundingClientRect();
+    if (a.width < 1) continue;
+    for (let j = i + 1; j < texts.length; j += 1) {
+      const b = texts[j].getBoundingClientRect();
+      if (b.width < 1) continue;
+      const overlapW = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+      const overlapH = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+      if (overlapW > 3 && overlapH > 3) {
+        problems.push("overlap:" + (texts[i].textContent || "").trim().slice(0, 10) + "/" + (texts[j].textContent || "").trim().slice(0, 10));
       }
     }
   }
-  return problems.join("|") || "ok";
+  return problems.slice(0, 6).join("|") || "ok";
 })()`;
 
 const ARROWS = `(() => {
   const problems = [];
-  const shafts = [...document.querySelectorAll(".edge-shaft")];
-  if (shafts.length < 8) problems.push("few-shafts");
-  const clear = (color) => !color || color === "transparent" || color === "rgba(0, 0, 0, 0)";
-  for (const shaft of shafts) {
-    const style = getComputedStyle(shaft, "::after");
-    const top = Number.parseFloat(style.borderTopWidth);
-    const bottom = Number.parseFloat(style.borderBottomWidth);
-    const down = top > bottom && !clear(style.borderTopColor) && clear(style.borderBottomColor);
-    if (!down) problems.push("not-down");
+  const paths = [...document.querySelectorAll("#machine path[data-flow]")];
+  if (paths.length < 8) problems.push("few-rails");
+  for (const path of paths) {
+    if (!path.getAttribute("marker-end")) problems.push("no-marker:" + path.dataset.flow);
+    const len = path.getTotalLength();
+    if (len < 12) problems.push("short:" + path.dataset.flow);
+    const end = path.getPointAtLength(len);
+    const before = path.getPointAtLength(Math.max(0, len - 6));
+    const dx = end.x - before.x;
+    const dy = end.y - before.y;
+    const dir = Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? "right" : "left") : (dy >= 0 ? "down" : "up");
+    if (dir !== path.dataset.dir) problems.push(path.dataset.flow + ":" + dir + "!=" + path.dataset.dir);
+  }
+  const back = document.querySelector("[data-flow='model-back']");
+  const ask = document.querySelector("[data-flow='ask-model']");
+  if (back && ask) {
+    const backDir = back.dataset.dir;
+    const askDir = ask.dataset.dir;
+    if (backDir === askDir) problems.push("return-same-way");
   }
   return problems.join("|") || "ok";
 })()`;

@@ -6,6 +6,7 @@ import path from "node:path";
 import test from "node:test";
 import { repoRoot } from "../src/site.ts";
 import { discoverTopics } from "../src/topic.ts";
+import { geometryIssues, picture } from "../topics/hermes-agent/machine.js";
 import * as study from "../topics/hermes-agent/study.js";
 
 test("csv briefing is the fixed comparison", () => {
@@ -170,6 +171,96 @@ test("main-path frames do not claim a sandbox, training, or a fixed percent", ()
     assert.equal(study.view(current).weightsChanged, false);
     assert.equal(study.view(current).simulated, true);
   }
+});
+
+test("rails point along the data, including the return from the model", () => {
+  for (const mode of ["wide", "narrow"]) {
+    const pic = picture(study.createStudy(), mode);
+    const back = pic.rails.find((rail) => rail.id === "model-back");
+    const ask = pic.rails.find((rail) => rail.id === "ask-model");
+    assert.ok(back && ask);
+    if (mode === "wide") {
+      assert.ok(ask.net.dx > 0);
+      assert.ok(back.net.dx < 0);
+    } else {
+      assert.ok(ask.net.dy < 0);
+      assert.ok(back.net.dy > 0);
+    }
+    const issues = geometryIssues(pic);
+    assert.deepEqual(issues, []);
+  }
+});
+
+test("every scene frame keeps labels inside the machine on both layouts", () => {
+  const variants = [
+    {},
+    { backend: "docker" },
+    { backend: "docker-mount" },
+    { backend: "modal" },
+    { loopBranch: "parallel" },
+    { loopBranch: "error" },
+    { keepMemory: true, keepSkill: true, plane: "disk" },
+    { compressBranch: "miss" },
+    { scheduled: true, host: "offline" },
+    { scheduled: true, delivery: "fail" },
+  ];
+  for (const mode of ["wide", "narrow"]) {
+    for (const partial of variants) {
+      let current = study.createStudy();
+      for (const scene of study.SCENES) {
+        current = study.selectScene(current, scene.id);
+        if (Object.keys(partial).length > 0) current = study.patch(current, partial);
+        const list = study.frames(current);
+        for (let index = 0; index < list.length; index += 1) {
+          current = { ...current, index: { ...current.index, [scene.id]: index } };
+          const issues = geometryIssues(picture(current, mode));
+          assert.deepEqual(issues, [], `${mode} ${scene.id} ${list[index]?.id ?? ""} ${issues.join(",")}`);
+        }
+      }
+    }
+  }
+});
+
+test("backend, snapshot, and compression change the same machine", () => {
+  let current = study.selectScene(study.createStudy(), "boundary");
+  assert.equal(picture(current, "wide").exec.skip, false);
+  assert.equal(picture(current, "wide").exec.floorOnPath, true);
+  current = study.patch(current, { backend: "docker" });
+  const isolated = picture(current, "wide");
+  assert.equal(isolated.exec.skip, true);
+  assert.equal(isolated.exec.floorOnPath, false);
+  assert.match(isolated.labels.map((item) => item.text).join("\n"), /没有主机路径挂载/);
+  assert.match(isolated.labels.map((item) => item.text).join("\n"), /用户拒绝/);
+  assert.doesNotMatch(isolated.labels.map((item) => item.text).join("\n"), /等待批准/);
+  current = study.patch(current, { backend: "docker-mount" });
+  const mounted = picture(current, "narrow");
+  assert.equal(mounted.exec.skip, false);
+  assert.equal(mounted.exec.floorOnPath, true);
+  assert.match(mounted.labels.map((item) => item.text).join("\n"), /等待批准/);
+  current = study.patch(current, { backend: "modal" });
+  const modal = picture(current, "wide").labels.map((item) => item.text).join("\n");
+  assert.match(modal, /总是跳过/);
+  assert.doesNotMatch(modal, /没有主机路径挂载/);
+
+  let kept = study.patch(study.selectScene(study.createStudy(), "keep"), { keepMemory: true });
+  const frozenAt = study.frames(kept).findIndex((item) => item.id === "frozen");
+  kept = { ...kept, index: { ...kept.index, keep: frozenAt } };
+  const frozen = picture(kept, "wide");
+  assert.equal(frozen.diskText, "偏好先看百分比");
+  assert.equal(frozen.snapText, "（空）");
+  assert.equal(frozen.shownMemory, "（空）");
+  kept = study.patch(kept, { plane: "disk" });
+  kept = { ...kept, index: { ...kept.index, keep: frozenAt } };
+  assert.equal(picture(kept, "wide").shownMemory, "偏好先看百分比");
+
+  let packed = study.selectScene(study.createStudy(), "compress");
+  assert.equal(picture(packed, "wide").meter?.input, 92);
+  assert.equal(picture(packed, "wide").meter?.archive, 100);
+  packed = study.step(packed, 3);
+  const shrunk = picture(packed, "narrow");
+  assert.equal(shrunk.meter?.input, 46);
+  assert.equal(shrunk.meter?.archive, 100);
+  assert.equal(shrunk.frameId, "summary");
 });
 
 test("the published page pins the commit and keeps the simulation visible", () => {
